@@ -352,7 +352,7 @@ class Test:
 Test.test_static_method() # Output : You've called the static method
 ```
 
-Class methods are methods that can also be called either by the class itself or by instances of the class. It needs one argument as the first argument, and that is the class itself ( ```cls``` ). In order to build a class method you will need the ```@classmethod``` decorator.
+Class methods are methods that can also be called either by the class itself or by instances of the class. It needs one argument as the first argument, and that is the class itself ( ```mcs``` ). In order to build a class method you will need the ```@classmethod``` decorator.
 
 Example:
 
@@ -363,8 +363,8 @@ class TestClass:
         self.b = b
 
     @classmethod
-    def test_class_method(cls):
-        print(repr(cls))
+    def test_class_method(mcs):
+        print(repr(mcs))
 ```
 
 The instance methods are the normal methods that can only be used with instances of the class.
@@ -383,3 +383,205 @@ Python's internal names begin and end with double underscores ```__``` and they 
 > * Most names are public
 > * Names that start with ```_``` are somewhat less public. Use them for implementation details that are truly subject to change
 > * Names that begin and end with ```__``` are internal to Python. We never make these up; we only use the names define by the language reference.
+
+# 3. Integrating Seamlessly - Basic Special Methods
+
+In this chapter we'll go over the basic special methods. Special methods in python are methods that contain two underscores at the start and the beginning of their names. These are built-in methods that are called with built-in functions. Integrating these special methods and knowing how they work and how to change them will help make the code easier to write, understand and maintain. An example of a special method would be the ```__str__()``` method. These special methods are also called **dunder** methods ( double-underscore ). The ```__str__()``` ( dunder string ) is called whenever you write ```str(obj)``` on an object. Every object can override the ```__str__()``` method.
+
+## The ```__repr__()``` and ```__str__()``` methods
+
+Every object has 2 types of string representation. These are the ```__repr__()``` ( representation ) method and the ```__str__()``` ( string ) method.
+
+* The ```__str__()``` method is used for a simple string representation that can be used anywhere. This must be a string representation that is easy for humans to read and comprehend. 
+* The ```__repr__()``` method is a technical string representation and uses a complete Python expression to rebuild an object. 
+    * The documentation for the ```__repr__()``` method states as following:
+    * > If at all possible, this should look like a valid Python expression that could be used to recreate an objec twith the same value ( given an appropiate environment )
+* The buid-in ```print()``` function for example, uses the object's ```__str__()``` method.
+* When formatting an object inside of a string you can choose if you want to use the ```__str__()``` or the ```__repr__()``` method. Example: ```{x!r}``` uses the ```__repr__()``` method while ```{x!s}``` uses the ```__str__()``` method of the object.
+
+There are usually 2 design cases where we have to override ```__str__()``` and ```__repr__()```:
+
+* **Simple objects**: A simple object doesn't contain a collection of other objects and generally doesn't involve very complex formatting
+* **Collection objects**: An object that contains a collection involves somewhat more complex formatting
+
+Here is an example in code:
+
+```Python
+class TestClass:
+    def __init__(self, value1: int, value2: int) -> None:
+        self.value1 = value1
+        self.value2 = value2
+
+    def __str__(self) -> str:
+        return "This is the __str__() method of the object"
+
+    def __repr__(self) -> str:
+        return "This is the __repr__() method of the object"
+
+test_class = TestClass(1, 2)
+print(f"{test_class!r} < --- > {test_class!s}")
+
+# Output : This is the __repr__() method of the object < --- > This is the __str__() method of the objec
+```
+
+## The ```__format__()``` method
+
+The ```__format__()``` method is used by the:
+
+* ```f```-strings
+* ```str.format()``` method
+* ```format()``` method
+
+All 3 of these functions are used to format an object.
+
+You can also give arguments to a ```__format__()``` method. It looks like this:
+
+```Python
+"{0:<spec>}".format(some_object)
+```
+
+or:
+
+```Python
+f"{some_object:<spec>}"
+```
+
+```spec``` in this case stays for **specification** and this is how the ```__format__()``` method would pick up on that argument:
+
+```Python
+class TestClass:
+    def __init__(self, value1: int, value2: int) -> None:
+        self.value1 = value1
+        self.value2 = value2
+
+    def __format__(self, format_specification: str) -> str:
+        print(format_specification)
+        return ""
+    
+
+test_class = TestClass(1, 2)
+print("{0:this is the format specification}".format(test_class))
+
+# Output: this is the format specification
+```
+
+It is very important to know that if you are transforming a string inside the formatting string, you will not get the ```__format__()``` method invoked. You will invoke the method that you are using to transform your object into. 
+If you use the ```{some_object!r}```, in this case, you will not use the ```__format__()``` method, you will use the ```__repr__()``` method because you are transforming the string inside the format.
+
+You can also nest the formatting specifications:
+
+```Python
+test1 = 6
+test2 = "a"
+print(f"{test2:<{test1}}")
+# Output:
+# a      space
+```
+
+You can also delegate the ```__format__()``` method if your object is a container. You can delegate the ```__format__()``` to every item from your collection:
+
+```Python
+from typing import Any
+
+
+class TestClass:
+    def __init__(self, *items: Any) -> None:
+        self.items = list(items);
+
+    def __format__(self, format_specification: str) -> str:
+        if format_specification == "":
+            return str(self)
+
+        return ", ".join(f"{c:{format_specification}}" for item in self.items)
+```
+
+## The ```__hash__()``` method
+
+> The default ```__hash__()``` implementation inherited from an object reutnrs a value based on the object's internal ID value. This vlaue can be seen with the ```id()``` function.
+
+So the ```__hash__()``` method returns a value based on the ```id()``` method.
+
+> Not every object should provide a hash value. Speicifcally, if we're creating a class of stateful, **mutable** objects, the calss hould *never* return a hash value. There should not be an implementation of the ```__hash__()``` method. **It's bad to have object that claim to be equal and have different hash values**
+
+There are 3 tiers of equality comparision:
+
+* **The same hash value**: This mean taht two object **could** be equal. The has value provides us with a quick check for likely equality. If the has value is different, the two object cannot possibly be equal, nor can they be teh same object.
+* **Compare as equal**: This mean that the hash values must also have been equal. This is the definition of hte ```==``` operator. The objects may be teh same object.
+* **Same ID values**: This mean that they are the same object. They also compare as equal and will also have teh same hash value. This is the definition of the ```is``` operator.
+
+> The **Fundamental Law of Hash ( FLH )** has two parts:
+> * Objects that compare as equal have the same hash value.
+> * Objects with the same hash value may actually be distinct and not compare as equal.
+
+There are three use cases for defining equality tests and hash value via the ```__eq__()``` and ```__hash__()``` methods:
+
+* **Immutable objects**: These are stateless objects of types such as tuples, namedtuples, and frozensets that cannot be updated. We have two choices:
+    * Define neither ```__hash__()``` nor ```__eq__()```. This means doing nothing and using the inherited definitions. In this case, ```__hash__()``` returns a trivial function of the ID value for the object, and ```__eq__()``` compares the ID values.
+    * Define both ```__hash__()``` and ```__eq__()```. Note that we're expected to define both for an immutable object.
+* **Mutable objects**: These are stateful objects that can be modified internally. We have one design choice:
+    * Define ```__eq__()``` but set ```__hash__()``` to ```None```. These cannot be used as ```dict``` keys or items in ```sets```.
+
+## The ```__bool__``` method
+
+In Python, empty lists, sets, dictionaries, values such as False, 0, or emtpy strings have a boolean value of ```False```. In cases when we design for example a container class, we might want to override the ```__bool__()``` method to be delegated to the ```__bool__()``` method of the collection that is stored in the container and not the container itself.
+
+For example:
+
+```Python
+class Container:
+    def __init__(self, items: Any) -> None:
+        self._items = items
+
+    def __bool__(self) -> bool:
+        return bool(self._items)
+```
+
+## The ```__bytes__()``` method
+
+The ```__bytes()__``` method is called when you use the ```bytes()``` built-in function. It is usually only overwritten when using serialization of objects for persistent storage or transfer.
+
+## The comparision operator methods
+
+| Operator | Special methods |
+|----------|-----------------|
+|```x < y```|```x.__lt__(y)```|
+|```x <= y```|```x.__le__(y)```|
+|```x == y```|```x.__eq__(y)```|
+|```x != y```|```x.__ne__(y)```|
+|```x > y```|```x.__gt__(y)```|
+|```x >= y```|```x.__ge__(y)```|
+
+> **Here are two basic rules**
+> First, the operatnd on the lef-thand side of the operator is checked for an implementation : ```A<B``` means ```A.__lt__(B)````.
+> Second, the operand on the right-hand side of the operator is checkc for a reversed implementation: ```A<B``` means ```B.__gt__(A)```. The rare exception to this occurs when the right-hand operand is a subclass of the left-hand operand; then, the right-hand operand is checked first to allows a subclass to override a superclass.
+
+If you use ```obj1 > obj2``` and ```obj1``` doesn't have the ```__gt__()``` method implemented, python uses ```obj2.__lt__(obj1)``` instead.
+
+The various comparision methods use two kinds of type checking: **class** and **protocol**:
+
+* Class-based type checking uses ```isinstance()``` to check the class membership of the object. When the check fails, the method returns the special ```NotImplemented``` value; this allows the other operand to implement the comparison. The ```isinstance()``` check also informs mypy of a type constraint on the objects anemd in the expression.
+* Protocol-based type checking follows **duck typing** principles. If the object supports the proper protocol, it will have the necessary attributes. This is shown in the implementation of the ```__le__()``` and ```__ge__()``` methods. A ```try```: block is used to wrap the attempt and provide a useful ```NotImplemented``` value if the protocl sin't available in the object. In this case, the ```cast()``` function is used to inform mypy that only objects with the expected class protocol will be used at runtime.
+
+> Two classes are poolymorphic when they share common attributes and methods. One common example of this is objects of the ```int``` and ```float``` classes. Both have ```__add__()``` methods to implement the ```+``` operator. Another example of this is that most collections offer a ```__len__()``` method to ipmlement the ```len()``` function. The results are produced in different ways, depending on the implementation details.
+> One symptom of **Pretty Poor Plymorphism** is the reliance on the ```isinstance()``` to determine the subclass memebership. Generally, this is a violation of the basic ideas of encapsulation and class design. A good set of polymorphic subclass definitions should be completely equivalent with the same methods signatures. Ideally, the calss definitions are also opaque; we don't need to look inside the class definition. A poor set of plymorphic classes uses extensive ```isinstance()``` class testing.
+
+## The ```__del__()``` method
+
+> The intent is to give an boject a chance to do any cleanup or finalization just before the boject is remove from memory. **This use case is handled much more cleanly by context manager objects and the ```with``` statement**.
+
+The ```__del__()``` is never invoked at an easy-to-predict time. It is not always deleted when the object has 0 count of references, nor it is always deleted when you use the ```del``` method. In the case of a **memory leak** ( that is when the object has 0 coutn of references but it is still not deleted ), the ```__del__()``` method is never invoked, which can lead to problems that are very hard to debug. **For these reasons, a context manager is often preferable to implementing ```__del__()```.**
+
+A circular reference is when you have a parent and a child object and they both have references to each other. So the parent object might be a container object that contains a collection with all the children and each child might have a property that points its parent. This is known as a ```circular reference```. The problem with circular references and the ```__del__()``` method is that we can't break the circularity by putting ocde in the ```__del__()``` method. The ```__del__()``` method is called **after** the circularity has been broken and the refenrece counts are already 0. When we have circular references, we can no longer rely on simple Pythonr eference counting to clear out the memory of unused objects. We must use a weak reference ( from the ```weakref``` module ).
+
+The most common use for ```__del__``` is to ensure the files are closed ( this is done in a much cleaner way by using context managers ).
+
+## The ```__new__()``` method
+
+The ```__new__()``` method is where an uninitialized object is created prior to the ```__init__()``` method setting the attribute values of the object. 
+
+> For any class we define, the default implementation of ```__new__()``` is inherited from the parent calss. Implicitly, the ```object``` object is the parent of all classes. The ```object.__new__()``` method build a simple, empty object of the reuqired class. The arguments and keyword to ```__new__()```, with the exception of the ```cls``` argument, are passed to ```__init__()``` as part of the standard Python behavior.
+> The following are two cases when this default behavior isn't perfect:
+> * When we want to subclass an immutable class definition. We'll look at this next.
+> * When we needto create a metaclass. That's the subject of the next section, as it's fundamentally different from creating immutable objects.
+
+The ```__new__()``` method can also be used to create metaclasses. **A metaclass is used to build a class**. Once a class object has been built, the class object is used to build instance objects.
