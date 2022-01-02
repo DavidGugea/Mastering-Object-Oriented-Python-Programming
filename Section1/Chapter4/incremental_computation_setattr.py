@@ -1,4 +1,4 @@
-class RTD_Dymamic:
+class RTD_Dynamic:
     def __init__(self) -> None:
         self.rate: float
         self.time: float
