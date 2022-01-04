@@ -585,3 +585,324 @@ The ```__new__()``` method is where an uninitialized object is created prior to 
 > * When we needto create a metaclass. That's the subject of the next section, as it's fundamentally different from creating immutable objects.
 
 The ```__new__()``` method can also be used to create metaclasses. **A metaclass is used to build a class**. Once a class object has been built, the class object is used to build instance objects.
+
+# 4. Attribute Access, Properties and Descriptors
+
+## Class and instance variables
+
+Before getting into this chapter, I would like to talk about the difference between class and instance attributes. Instance attributes, as you know, are attributes that are implemented using the ```__init__()``` method. They look something like this:
+
+```Python
+class Person:
+    def __init__(self, name: str, age: int) -> None:
+        self.name = name
+        self.age = age
+```
+
+These are instance attributes. We've talked about classmethods ( they use the ```@classmethod``` decorator ) before and we've said that these methods can be used by the instances, but they can also be used by the class itself. 
+Class attributes behave the same as class methods. Class attributes can be used by the instances, but they can also be used by the class itself. When you access a class attribute from an instance, python will look at that instance's namespace and if it won't find the attribute, it will look at the namespaces of the class.
+
+Example of class attributes:
+
+```Python
+class Person:
+    some_class_variable: int = 5
+
+    def __init__(self, name: str, age: int) -> None:
+        self.name = name
+        self.age = age
+
+
+test_person = Person("test_name", 23)
+print(test_person.name)  # test_name
+print(test_person.age)  # age 
+print(test_person.some_class_variable)  # 5
+print(Person.some_class_variable)  # 5
+```
+
+In this example we have 2 instance attributes ( name and age ) and 1 class attribute ( some_class_variable ). 
+You can look at the attributes of a class using the ```dir()``` and ```vars()``` methods. The difference between ```dir()``` and ```vars()``` is that ```vars()``` returns the ```__dict__``` variable while ```dir()``` returns a list with all attributes that the class can access ( including attributes from super-classes )
+The ```__dict__``` attribute of a class returns a dictionary that stores an object's writable attributes.
+
+Example:
+
+```Python
+print(vars(test_person))
+print(test_person.__dict__)
+print(dir(test_person))
+
+"""
+Output:
+{'name': 'test_name', 'age': 23}
+{'name': 'test_name', 'age': 23}
+['__annotations__', '__class__', '__delattr__', '__dict__', '__dir__', '__doc__', '__eq__', '__format__', '__ge__', '__getattribute__', '__gt__', '__hash__', '__init__', '__init_subclass__', '__le__', '__lt__', '__module__', '__ne__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__setattr__', '__sizeof__', '__str__', '__subclasshook__', '__weakref__', 'age', 'name', 'some_class_variable']
+"""
+```
+
+The ```__class__``` attribute of a class will return it's type. For example, in our case, ```test_person.__class__``` will return us the ```Person``` class.
+This means that, internally, when you call an object's class variable, if python doesn't find that variable inside the object's namespace, it will go up the ladder, to it's type ( to it's class ) and look into that, and so on ( it works like the prototype chain in JavaScript ).
+
+So, internally, this is what happens when you write ```test_person.some_class_variable```:
+
+```Python
+print(test_person.some_class_variable)
+print(test_person.__class__.some_class_variable)
+```
+
+This returns the exact same result. 
+But this also means that, if you change the class variable from the class itself, it will be changed for all instances, but if you change the class variable from an instance, it will only change for that perticular instance. That happens because you basically give the class a new attribute by dynamically implementing into into the namespaces of that object.
+
+Example:
+
+```Python
+class Person:
+    some_class_variable: int = 5
+
+    def __init__(self, name: str, age: int) -> None:
+        self.name = name
+        self.age = age
+
+test_person_1 = Person("test_person_1_name", 23)
+test_person_2 = Person("test_person_1_name", 24)
+
+print(test_person_1.some_class_variable)
+print(test_person_2.some_class_variable)
+Person.some_class_variable = 20
+print(test_person_1.some_class_variable)
+print(test_person_2.some_class_variable)
+print("-"*50)
+test_person_1.some_class_variable = 30
+print(test_person_1.some_class_variable)
+print(test_person_2.some_class_variable)
+
+"""
+Output:
+5 
+5
+20
+20
+--------------------------------------------------
+30
+20
+"""
+```
+
+Class variables are widely used in descriptors and with the ```dataclass``` module.
+
+## Optional attributes
+
+Most of the time we create a collection of attributes in the ```__init__()``` method that describe certain state of the object. We provide names and ideally, default value, for all the attributes in the ```__init__()``` method
+
+> While it's not required to place all the attributes in the ```__init__()``` method. While this is not required, it's the place ```mypy``` checks to gather the expected list of attributes of an object. An optional attribute can be used as part of an object's state, but there aren't easy ways to describe the absence of an attribute.
+> An optional attribute also pushes the edge of the envelope in terms of class definition. A class is defined by the unique collection of attributes. Attributes are best added ( or removed  )by creating a subclass or superclass definition. Dynamic changes to the attributes are dconfusing to tools such as ```mypy``` as well as to people
+> Generally, optional attributes imply a concealed or informal subclass relationship. Therefore, we bump up against Pretty Poor Polymorphism whne we use optional attributes. Mutliple polymorphic subclasses are often a better implementation than optinal attributes.
+
+## Creating properties
+
+The difference between an attribute and a property is that properties can implement setters getters and deleters.
+There is also another difference between attributes and properties and that is that new attributes can always be dynamically added to the class, while new properties can't.
+You can build a property by either using the ```@property``` decorator or the ```property()``` method.
+
+When using the ```@property``` decorator, that describes the getter, then you will have to use the name of the attribute and then add *.setter* or/and *.deleter* for the setter and deleter. You can't, however, build a ```setter``` nor a ```deleter``` without have a ```getter``` first:
+
+```Python
+@property
+def value(self) -> int:
+    return self._value
+
+@value.setter
+def value(self) -> None:
+    return self._value
+
+@value.deleter
+def value(self) -> None:
+    print("You've deleted the value")
+```
+
+There are two basic design patterns for properties:
+
+* Eager calculation: When we set a value via a property, other attributes are also computed
+* Lazy calcuation: Calculation are deferred until requested via a property
+
+Example of lazy and eager calculation:
+
+```Python
+class Hand:
+    def __init__(
+            self,
+            dealer_card: BlackJackCard,
+            *cards: BlackJackCard
+    ) -> None:
+        self.dealer_card = dealer_card
+        self._cards = list(cards)
+
+    def __str__(self) -> str:
+        return ", ".join(map(str, self.card))
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}"
+            f"({self.dealer_card!r}"
+            f"{', '.join(map(str(repr, self.card)))})"
+        )
+
+
+class Hand_Lazy(Hand):
+    @property
+    def total(self) -> int:
+        delta_soft = max(c.soft - c.hard for c in self._cards)
+        hard_total = sum(c.hard for c in self._cards)
+        if hard_total + delta_soft <= 21:
+            return hard_total + delta_soft
+
+        return hard_total
+
+    @property
+    def card(self) -> List[BlackJackCard]:
+        return self._cards
+
+    @card.setter
+    def card(self, a_card: BlackJackCard) -> None:
+        self._cards.append(a_card)
+
+    @card.deleter
+    def card(self) -> None:
+        self._cards.pop(-1)
+
+
+class Hand_Eager(Hand):
+    def __init__(
+            self,
+            dealer_card: BlackJackCard,
+            *cards: BlackJackCard
+    ) -> None:
+        self.dealer_card = dealer_card
+        self.total = 0
+        self._delta_soft = 0
+        self._hard_total = 0
+        self._cards: List[BlackJackCard] = list()
+        for c in cards:
+            self.card = c
+
+    @property
+    def card(self) -> List[BlackJackCard]:
+        return self._cards
+
+    @card.setter
+    def card(self, a_card: BlackJackCard) -> None:
+        self._cards.append(a_card)
+        self._delta_soft = max(a_card.soft - a_card.hard, self._delta_soft)
+        self._hard_total = self._hard_total + a_card.hard
+        self._set_total()
+
+    @card.deleter
+    def card(self) -> None:
+        removed = self._cards.pop(-1)
+        self.hard_total -= removed.hard
+        self._delta_soft = max(c.soft - c.hard for c in self._cards)
+        self._set_total()
+
+    def _set_total(self) -> None:
+        if self._hard_total + self._delta_soft <= 21:
+            self.total = self._hard_total + self._delta_soft
+        else:
+            self.total = self._hard_total
+```
+
+In the eager computation case, each time a cardi s added via the card ```setter``` property, the ```total``` attribute is updated.
+
+> In both cases, the client software uses the ```total``` attribute. The lazy implementation defers computation of total until required, but recomputes them every time. The eager implementation computes total immediately, and only recomputes them on a change to the hand. The trade-off is an important software engineering question, and the final choice depends on how the overall application uses the ```total``` attributes.
+
+> The advantage of using properties is that the syntax doesn't change when the implementation changes. We can make a similar claim for ```getter/setter``` method functions. However, ```getter/setter``` method functions involve extra syntax that isn't very helpful or informative. The following are two example, one of which involves the use of a ```setter``` method, while the other uses the assignment operator:
+
+```Python
+obj.set_something(value)
+obj.something = value
+```
+
+## Special methods for attribute access
+
+The special methods used for attributes access are:
+
+* The ```__setattr__(self, name, value)``` will **create and set** attributes
+* The ```__getattr__(self, name)``` is a fallback method used when an attribute is not defined. The default behavior is the raise an ```AttributeError```
+* The ```__getattribute(self, name)``` is called every time you access an attribute ( even if the attribute is part defined or not ).
+* The ```__delattr__(self, name)``` method deletes an attribute
+
+## Limiting attribute names with ```__slots__```
+
+We can use ```__slots__``` in order to maek sure that no new attributes can be added to a class. Example:
+
+```Python
+class Person:
+    __slots__ = ("name", "age")
+
+    def __init__(self, name: str, age: int) -> None:
+        self.name = name
+        self.age = age
+
+test_person = Person("test_person_name", 23)
+print(test_person.name)
+print(test_person.age)
+# test_person.new_instance_variable = 5  # AttributeError: 'Person' object has no attribute 'new_instance_variable'
+
+```
+
+> Settings the ```__slots__``` attribute turns off he internal ```__dict__``` featuer of the obejct and limits us to these attribute names only. The define attribute  values are mutable even though ne wattributes cannot be added.
+
+## Dynamic attributes with ```__getattr__()```
+
+As I've already said, the ```__geattr__(self, name)``` method is called whenever an attribute is not implemented. We can use this to our advantage to dynamically assign values to attributes that were not defined yet.
+
+Example:
+
+```Python
+class RTD_Solver:
+    def __init__(
+            self, *,
+            rate: float = None,
+            time: float = None,
+            distance: float = None
+    ):
+        if rate:
+            self.rate = rate
+        if time:
+            self.time = time
+        if distance:
+            self.distance = distance
+
+    def __getattr__(self, item: str) -> float:
+        if item == "rate":
+            return self.distance / self.tiem
+        elif item == "time":
+            return self.distance / self.rate
+        elif item == "distance":
+            return self.rate * self.time
+        else:
+            raise AttributeError(f"Can't compute {item}")
+```
+
+In this example, the ```RTD_Solver``` class only needs 2 attributes given and the third one will be implemented dynamically using the ```__getattr__(self, name)``` method.
+
+> When an instance of ```RTD_Solver``` is created with an attribute value set by the ```__init__()``` method, the ```__getattr__()``` method is not used toe fetch the attribute. The ```__getattr__()``` method is only used for unknown attributes.
+
+## Creating immutable obejcts as a ```NamedTuple``` subclass
+
+The best approach in terms of creating immutable objects is using the ```typing.NamedTuple``` class as an upper-class.
+
+Example:
+
+```Python
+from typing import NamedTuple
+
+class Person(NamedTuple):
+    name: str
+    age: int
+
+test_person = Person("test_person_name", 23)
+print(test_person.name)
+print(test_person.age)
+# test_person.dynamic_instance_variable = 22  # AttributeError: 'Person' object has no attribute 'dynamic_instance_variable'
+```
+
+When using ```typing.NamedTuple```, the class variables are used as instance variables.
