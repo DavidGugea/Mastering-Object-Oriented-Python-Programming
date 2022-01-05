@@ -906,3 +906,154 @@ print(test_person.age)
 ```
 
 When using ```typing.NamedTuple```, the class variables are used as instance variables.
+
+## Eagerly computed attributes, dataclasses, and ```__post_init__()```
+
+The dataclasses module in Python has the same concept as the lombok library in Java. It offers your class a lot of functionality and you have to do a lot less work, the class will look a lot cleaner and it will be a lot easier to maintain.
+The ```@dataclass``` decorator will transform your normal class into a dataclass. You can also give arguments to the decorator ( you can give it the ```frozen=true``` argument in order to create a frozne class ). The ```@dataclass``` decorator generates an a lot of methods for you, like ```__init__()``` and ```__repr__()```.
+The ```__post_init__()``` method is called after the ```__init__()``` method.
+
+In a dataclass, the ```__init__()``` method is generated for you by using the class attributes. 
+
+```Python
+@dataclass()
+class RateTimeDistance:
+    rate: Optional[float] = None
+    time: Optional[float] = None
+    distance: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        print("POST INIT")
+        if self.rate is not None and self.time is not None:
+            self.distance = self.rate * self.time
+        elif self.rate is not None and self.distance is not None:
+            self.time = self.distance / self.rate
+        elif self.time is not None and self.distance is not None:
+            self.rate = self.distance / self.time
+
+
+if __name__ == '__main__':
+    r1 = RateTimeDistance(time=1, rate=0)
+    print(r1.distance)
+```
+
+You only have to give 2 instance attributes to this class, the other attribute will be eagerly computed in the ``__post_init__()``` method.
+
+## Incremental computation with ```__setattr__()```
+
+> We can create classes which use ```__setattr__()``` to detect changes in attribute values. This can lead to incremental computation. The idea is to build derived values after initial attribute values have been set.
+
+You can use the ```__setattr__()``` method in order to implement incremental computation. If you change the value of a certain attribute inside your class, other attributes will change to, automatically.
+
+Example:
+
+```Python
+class RTD_Dynamic:
+    def __init__(self) -> None:
+        self.rate: float
+        self.time: float
+        self.distance: float
+
+        super().__setattr__('rate', None)
+        super().__setattr__('time', None)
+        super().__setattr__('distance', None)
+
+    def __setattr__(self, name: str, value: float) -> None:
+        if name == "rate":
+            super().__setattr__('rate', value)
+        elif name == "time":
+            super().__setattr__("time", value)
+        elif name == "distance":
+            super().__setattr__("distance", value)
+            
+        if self.rate and self.time:
+            super().__setattr__("distance", self.rate * self.time)
+        elif self.rate and self.distance:
+            super().__setattr__("time", self.distance / self.rate)
+        elif self.time and self.distance:
+            super().__setattr__("rate", self.distance / self.time)
+```
+
+## The ```__getattribute__()``` method
+
+The ```__getattribute__()``` method is called whenever you are calling an attribute from the class, wether known or unknown.
+The default implementation of this method will try to return the value from the ```__dict__``` or ```__slots__``` attributes of the class. If the attribute is now found, the method calls ```__getattr__()``` as a fallback.
+
+Here are some things that we can implement by overriding this method:
+
+* We can effectively prevent access to attributes. This method, by raising an exceptio oinstaed of returning a value, can make an attribute more secret than if we were to merely use the leading underscore (```_```) to mark a name as private to the implementation
+* We can invent new attributes similarly to how ```__geattr__()``` can invent new attributes. In this case, however, we can bypass the default lookup done by the default version of ```__getattribute__()```.
+
+Example of the first implementation:
+
+```Python
+class SuperSecret:
+    def __init__(self, hidden: Any, exposed: Any) -> None:
+        self._hidden = hidden
+        self.exposed = exposed
+
+    def __getattribute__(self, item: str):
+        if (len(item) >= 2 and item[0] == "_") and item[1] != "_":
+            raise AttributeError(item)
+
+        return super().__getattribute__(item)
+```
+
+## Descriptors
+
+A descriptor is a class that mediates attribute access. The descriptor class can be used to get, set or delete attribute values. They are built at class definition time.
+There are 2 types of descriptors:
+
+* A non-data descriptor is a read-only descriptor that only allows you to get the data from inside of it, but it doesn't allow you to change it. This type of descriptor only implements the ```__get__()``` method.
+* A data descriptor is a descriptor that allows you to change the value that is inside of it. This type of descriptor implements the ```__get__()``` method and at least one of the two ```__set__()``` and ```__delete__()``` methods.
+
+Here is an example of a data descriptor:
+
+```Python
+class LoggedAccess:
+    def __set_name__(self, owner, name):
+        self.public_name = name
+        self.private_name = "_{0}".format(name)
+
+    def __get__(self, obj, objtype):
+        value = getattr(obj, self.private_name)
+        logging.info("Accessing {0} giving {1}".format(
+            self.public_name,
+            value
+        ))
+        return value
+
+    def __set__(self, obj, value) -> None:
+        logging.info("Updating {0} to {1}".format(
+            self.public_name,
+            value
+        ))
+        setattr(obj, self.private_name, value)
+
+
+class Person:
+    name = LoggedAccess()  # First descriptor instance
+    age = LoggedAccess()  # Second descriptor instance
+
+    def __init__(self, name: str, age: int) -> None:
+        self.name = name  # Calls the first descriptor
+        self.age = age  # Calls the second descriptor
+
+    def birthday(self) -> None:
+        self.age += 1
+```
+
+**Descriptors can only be implemented using class attributes**. 
+You can think of a descriptor as an external getter/setter for a value.
+
+## Attribute Design Patterns
+
+In Python, it's common to treat all attributes as public. This mean the following:
+
+* All attributes should be well documented.
+* Attributes should properly reflect the state of the object; they shouldn't be temporary or trasient values.
+* In the rare case of an attribute that has a potentially confusing ( or brittle ) value, a single leading underscore character (```_```) marks the name as *not part of the defined interface*. It's not techincally private, but it can't be relied on in the next releasee of the framework or package.
+
+It's important to think of private attributes as a nuisance. Encapsulation isn't broken by the lack of compelx privacy mechanisms in the language; propert encapsulatin canonly be broken by bad design.
+
+Additionally, we have to choose between an attribute or a rpoperty which has the same syntax as an attribute, but can have more complex semantics.

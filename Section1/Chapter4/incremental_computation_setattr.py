@@ -20,3 +20,18 @@ class RTD_Dynamic:
             f"{self.__class__.__name__}"
             f"({', '.join(clauses)}"
         )
+
+    def __setattr__(self, name: str, value: float) -> None:
+        if name == "rate":
+            super().__setattr__('rate', value)
+        elif name == "time":
+            super().__setattr__("time", value)
+        elif name == "distance":
+            super().__setattr__("distance", value)
+
+        if self.rate and self.time:
+            super().__setattr__("distance", self.rate * self.time)
+        elif self.rate and self.distance:
+            super().__setattr__("time", self.distance / self.rate)
+        elif self.time and self.distance:
+            super().__setattr__("rate", self.distance / self.time)
