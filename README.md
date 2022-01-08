@@ -1055,5 +1055,100 @@ In Python, it's common to treat all attributes as public. This mean the followin
 * In the rare case of an attribute that has a potentially confusing ( or brittle ) value, a single leading underscore character (```_```) marks the name as *not part of the defined interface*. It's not techincally private, but it can't be relied on in the next releasee of the framework or package.
 
 It's important to think of private attributes as a nuisance. Encapsulation isn't broken by the lack of compelx privacy mechanisms in the language; propert encapsulatin canonly be broken by bad design.
-
 Additionally, we have to choose between an attribute or a rpoperty which has the same syntax as an attribute, but can have more complex semantics.
+
+# 5. The ABCs of Consistent Design
+
+## Abstract base classes
+
+An abstract base class has the following features:
+
+* Abstract means that these classes don't contain all the method definitinos required to work completely. For it to be a usefull subclass, we will need to provide some method definitions.
+* Base means that the other classes will use it as a superclass. Abstract base classes are not made to be instantiated.
+* An abstract class provides some definitions for methods. Most importantly, the abstract base classes often provide the signatures for the missing methods. A subclass must provide the right methods to create a concrete class that fits the interfae define by the abstract class.
+
+You can create an abstract base class that is also a container by using the ```collections.abc``` module:
+
+```Python
+import collections.abc
+
+class SomeApplicationClass(collections.abc.Sequence):
+    pass
+```
+
+Now that the *SomeApplicationClass* was defined as a ```Sequence```, it will have to implement the specific methods required by the ```Sequence``` abstract base class.
+
+## Base classes and polymorphism
+
+> In this section, we'll get into the idea of **pretty poor polymorphism. Inspection of argument value types is a Python programming practice that should be isolated to a few special cases. Later, when we look at numbers and numeric coercion, we'll learn about cases where the inspection of types is recommended.
+> Well-done polymorphism follows what is sometimes claled the **Liksov substituion principle**. Polymorphic classes can be used intercahngeably. Each polymorphic class has the same suite of properties. 
+> Overusing ```isinstance()``` to distinguish between the types of arguments can lead to a needlessly compelx ( and slow ) program. Unit testing is a far better way to find programming errors than verbose type inspection in the code.
+> Method functions with lots of ```isinstance()``` methods can be a symptomp of a poor ( or incomplete ) design of polymorphic classes. Rather than having type-specific processing outside of a class definition, it's often better to extend or wrap classes to make them more properly polymorphic and encapsulat the type-specific processing withint the class definition.
+
+> The python approach is summarized as follows:
+> *"It's better to ask for forgiveness than to ask for permission."*
+> This is generally taken to mean that we should minimize the upfront testing of arguments ( asking permission ) to see if they're the correct type. Argument-type inspections are rarely of any tangible benefit. Instead we should handle the exceptions appropriately ( asking forgiveness ).
+> Checking types in advance is often called **look before you leap (LBYL)** programming. It's an overhead of relatively little value. The alternative is called **easiert to ask for forgiveness than permission (EAFP)** programming, and relies on ```try``` statements to recover from problems.
+
+## Callable
+
+Python's definition of *callable** objects includes the function definitions using the ```def``` statement.
+
+The ```Callable``` type hint is used to describe an object that contains the dunder call method ( ```__call__``` ).
+
+## Containers and collections
+
+When creating a new kind of container, we have 2 general approaches:
+
+* We can use the ```collections.abc``` module to build new containers and formally inherit behavior from the abstract base classes.
+* We can rely on type hinting to confirm that methods match the needed protocol.
+
+The formality of using ```collections.abc``` has the following advantages:
+
+* It advertises what our intentino was to people reading our code. When we are making a subclass that inherit from a class from the ```collections.abc``` module, we are making a very strong claim about the functionality of that class and how it should be used.
+* It creates some diagnostic support. If we fail to implement all of the required methods properly, an exception will be raised when trying to create instances of the abstract base class.
+
+## MRO and metaclasses
+
+Classes in python can be seen as objects ( read https://realpython.com/python-metaclasses/ ). They are built using ```type```. ```type``` is also a metaclass and inherits from itself. 
+The MRO ( method resolution order ) returns a tuple with all the bases of a class, in order.
+
+## The abc and typing modules
+
+The ```ABCMeta``` class is a metaclass that ensure that abstract classes can't be instantiated and that subclasses must implement all the abstract methods ( use ```@abstractmethod``` for that ) in order to be allowed to build instances.
+
+## Using the ```__subclasshook__()``` method
+
+> We can define absract base classes with complex rules for overrides to create concrete subclasses. This is done by implementing the ```__subclasshook__()``` method of the abstract base class.
+
+## Abstract classes using type hints
+
+You can also use type hinting in order to check for abstract classes. Example:
+
+```Python
+from typing import Tuple, Iterator, Any
+
+
+class LikeAbstract:
+    def aMethod(self, arg: int) -> int:
+        raise NotImplementedError
+
+
+class LikeConcrete(LikeAbstract):
+    def aMethod(self, arg1: str, arg2: Tuple[int, int]) -> Iterator[Any]:
+        pass
+```
+
+The concrete class will be checked by mypy to be sure that it matches the type hints from the abstract method. It's not as strict as the checks that are made by the ```ABCMeta``` class.
+
+## Short summary
+
+A rule for good class design is to inherit as much as possible. 
+There are three fundamental design strategies when it comes to containers:
+
+* Wrapping an existing container
+* Extending an existing container
+* Inventing a wholly new kind of container
+
+Most of the time we will use the first two strategies; wrapping an existing container or extending an existing container. This fits with the rule of inheriting as much as possible.
+
