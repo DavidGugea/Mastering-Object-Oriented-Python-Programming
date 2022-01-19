@@ -1152,3 +1152,141 @@ There are three fundamental design strategies when it comes to containers:
 
 Most of the time we will use the first two strategies; wrapping an existing container or extending an existing container. This fits with the rule of inheriting as much as possible.
 
+
+# 6. Using Callable and Contexts
+
+The concept **callable** in Python enables us to create functions and classes that behave like functions.
+We can create for example a **callable** object that uses *memoization* to cache answers in order to make an algorithm faster.
+
+The concept of **context** allows u to create reliable resource management. The ```with``` statement defines the start of a context and creates a context manager to control resources used in that context. 
+We can add certain actions that happen automatically at the start/end of a context. This allows us to safely open/exit files or to separate cross-cutting concerns in certain cases. When opening files in a context manager, python returns by default a context manager that safely closes files for you.
+
+## Callables
+
+### Example of a callable
+
+There are 2 ways of designing callables in Python:
+
+* By creating a normal function using the ```def``` statement.
+* By creating an instance of a class that implements the ```__call__()``` method. You can signal that a class is meant to be a callable class by using ```collections.abc.Callable``` as its base class.
+
+Example of a callable class:
+
+```Python
+from typing import Callable, Dict
+
+IntExp = Callable[[int, int], int]
+
+
+class Power:
+    def __init__(self, a: str):
+        self.a = a
+
+    def __call__(self, x: int, n: int) -> int:
+        p = 1
+        for i in range(n):
+            p *= x
+
+        return p
+
+
+
+if __name__ == "__main__":
+    pow: IntExp = Power4()
+    print(pow(2, 1024))
+```
+
+### Abstract base class for callables
+
+You can see that we are calling the class, just like we would call any other normal function. The problem with this class is that, if it would get a lot longer, it wouldn't be clear that this is meant to be used as a *callable*. On top of that, if we would have any problem with the ```__call__()``` method, it would be a lot easier to debug it if we would inherit this class from a abstract base class.
+In order to fix this problem we have to make the class inherit from ```collections.abc.Callable```:
+
+```Python
+import collections.abc
+from typing import Callable, Dict
+
+IntExp = Callable[[int, int], int]
+
+
+class Power(collections.abc.Callable):
+    def __init__(self, a: str):
+        self.a = a
+
+    def __call__(self, x: int, n: int) -> int:
+        p = 1
+        for i in range(n):
+            p *= x
+
+        return p
+
+
+
+if __name__ == "__main__":
+    pow: IntExp = Power4()
+    print(pow(2, 1024))
+```
+
+### Callables with memoization
+
+The idea of memoization is to cache (save) certain results of a predicate based on a certain number of steps that have been taken to get to the result, when the predicate is called again using the exact same sequence of steps, rather than computing the result again, we are returning the cached result.
+
+We can speed up the process of computing by using memoization. The trade-off of memoization is memory. The algorithm will use a lot less CPU power and will be a lot faster but it will use a lot more memory since it has to store the cached values.
+
+Example of a callable with memoization:
+
+
+```Python
+class Power(collections.abc.Callable):
+    def __init__(self) -> None:
+        self.memo: Dict = {}
+
+    def __call__(self, x: int, n: int) -> int:
+        if (x, n) not in self.memo:
+            if n == 0:
+                self.memo[x, n] = 1
+            elif n % 2 == 1:
+                self.memo[x, n] = self.__call__(x, n - 1) * x
+            elif n % 2 == 0:
+                self.memo[x, n] = self.__call__(x, n // 2)
+            else:
+                raise Exception("Logic Error")
+
+        return self.memo[x, n]
+```
+
+The cached values are stored inside the ```self.memo``` dictionary and returned every time the same arguments are given to the callable.
+
+### Functools memoization
+
+The ```functools``` library contains a bunch of helpful tools for functions/callables/classes etc.
+Probably one of the most used decorator from the ```functools``` library is ```lru_cache```. 
+The ```lru_cache``` decorator implements memoization in your function:
+
+Example:
+
+```Python
+from functools import lru_cache
+
+
+@lru_cache()
+def pow(x: int, n: int) -> int:
+    if n == 0:
+        return 1
+    elif n % 2 == 1:
+        return pow6(x, n - 1) * x
+    else:
+        t = pow6(x, n // 2)
+        return t * t
+```
+
+## Managing contexts and the ```with``` statement
+
+When you open a file using the ```with``` statement, a context manager is created around that process. After you do your work, the context manager will automatically close the file for you.
+
+> When the ```with``` statements end, the contexts exit and the files are properly closed; this means that all the buffers are flushed an the operating system resources are released. Even if there's an exception in the body of the ```with``` context, the context manager's exit will be processed correctly and the file will be closed.
+
+> **Always use a with statement around a path.open() and related file-system operations
+
+> Since files involve operating system resources, it's important to be sure that the entanglements between our appliation and the OS are released as soon as they're no longer needed. The ```with``` statement ensures that resources are used properly.
+
+### Defining the ```__enter__()``` and ```__exit__()``` methods
