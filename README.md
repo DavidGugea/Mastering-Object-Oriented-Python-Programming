@@ -1290,3 +1290,49 @@ When you open a file using the ```with``` statement, a context manager is create
 > Since files involve operating system resources, it's important to be sure that the entanglements between our appliation and the OS are released as soon as they're no longer needed. The ```with``` statement ensures that resources are used properly.
 
 ### Defining the ```__enter__()``` and ```__exit__()``` methods
+
+When building a custom context manager, it has two special methods: ```__enter__()``` and ```__exit__()```. These are used by the context manager when it starts/ends.
+
+> We'll often use context managers to make global state changes. This might be a change to the database transaction status or a change to the locking status of a resource, something that we want to do and then undo when the transaction is complete
+
+Example of a simple custom context manager:
+
+```Python
+from typing import Optional, Type
+from types import TracebackType
+
+
+class CustomContextManager:
+    def __enter__(self) -> None:
+        print("enter")
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_value: Optional[BaseException],
+        traceback: Optional[TracebackType]
+    ) -> None:
+        print("exit")
+
+with CustomContextManager():
+    print("Inside the custom context manager")
+
+"""
+Output:
+enter
+Inside the custom context manager
+exit
+"""
+```
+
+You can also handle exception directly from the ```__exit__()``` method. If the context manager exists with a certain error, you can program it to do something automatically for that certain case.
+
+### Context manager as a factory
+
+We can use the context manager as a factory as well. We can use the special method enter ( ```__enter__()``` ).
+
+### Context manager design considerations and trade-offs
+
+> A context is generally used for acquire/release, open/closed and lock/unlock types of operation paris. Most of the examples are file I/O related, and most of the file-like objects in Python are already proper context managers.
+
+> A Context manager is almost always required for anything that has steps that bracket the essential processing. In particular, anything that requires a final ```close()``` method should be wrapped by a context manager.
