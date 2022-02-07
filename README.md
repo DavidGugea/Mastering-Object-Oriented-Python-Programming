@@ -1336,3 +1336,162 @@ We can use the context manager as a factory as well. We can use the special meth
 > A context is generally used for acquire/release, open/closed and lock/unlock types of operation paris. Most of the examples are file I/O related, and most of the file-like objects in Python are already proper context managers.
 
 > A Context manager is almost always required for anything that has steps that bracket the essential processing. In particular, anything that requires a final ```close()``` method should be wrapped by a context manager.
+
+# 7. Creating Containers and Collections
+
+There are a lot of options when it comes to containers and collections. We can either use the built-in containers ( lists, sets, dictionaries, etc. ) or we can use the collections library which includes things like deques, ChainMaps, etc.
+We also have the option to create our own containers by using the **abstract base classes** which also provides us with design guidelines and gives the users a general idea of what our new container is supposed to be used for and under what circumstances. However, it is very rare that you are going to need a new type of container.
+
+## ABCs of collections
+
+### Basics of ABCs and polymorphism
+
+The ```collections.abc``` module gives us the ability to decompose self-made collections into smaller sets in order to describe their functionality. **A related set of features of a class is called a *protocol***.
+An example of a protocol is for example the ability to get, set and delete items which would describe the protocol for list-like behavior. So is the ```__iter__()``` method part of the protocol for defining an iterable container. A fully functioning list might/should implement both of these protocols. You should be able to add, get and delete items as well as iterate over them.
+
+We usually tend to use a ```list``` without thinking about the underlining features than lay behind it and how it deeply relates to other data structures like ```sets``` or even ```dicts```. Once we look at the ABCs of these data structures we can see how they relate to each other and how they are the same in many aspects. They all have numerous protocols in common. At the core of all these collections we can find the core protocols.
+
+> By decomposing the aspects of each collection, we can see areas of overlap that manifest themselves as an elegant polymorphism, even among different data structures.
+
+### Single Method Base Classes and Composite Base Classes
+
+Let's take a look at the following base classes that only define a single method ( these are part of the core protocols that containers can implement ):
+
+* The ```Container``` ABC requires the concrete class to implement the ```__contains__()``` method. This special method implements the ```in``` operator.
+* The ```Iterable``` ABC requires the concrete class to implement the ```__iter__()``` method. This special method is used by the ```for``` statement as well as generator expressions and the ```iter()``` function.
+* The ```Sized``` ABC requires the concrete class to implement tthe ```__len__()``` method. This method is used by the ```len()``` function.
+* The ```Hashable``` ABC requires the concrete class to implement the ```__hash__()``` method. This is used bby the ```hash()``` function. **If this method is implement, that means that the object is immutable**.
+
+All of these ABCs are used to build higher-level composite definitions of structures that we can use. These composite structures include lower-level ABCs.
+Here are some composite ABCs that we could implement:
+
+* The ```Sequence``` and ```MutableSequence``` ABCs are built from the basic ABCs and implement methods such as ```index()```, ```count()```, ```reverse()```, ```extend()``` and ```remove()```.
+* The ```Mapping``` and ```MutableMapping``` classes contain methods such as ```keys()```, ```items()```, ```values()``` and ```get()```.
+* The ```Set``` and ```MutableSet``` classes include comparison and arithmetic operators to perform set operations.
+
+## Examples of special methods
+
+If you find yourself in the situation where you have to repeat a certain task that could easily be packed in a special method, it might be better to override the special method.
+
+Let's look at an example where your collection is based on the concept of wrapping a collection and delegating methods to it. Example:
+
+```Python
+class A:
+    def __init__(self) -> None:
+        self.my_collection: List[Any] = list()
+    def append(self, *args: List[Any]) -> None:
+        self.my_sequence.extend(args)
+```
+
+Now, let's say that you need to check if you can find a certain number in the wrapped collection multiple times.
+
+You can use ```any```:
+
+```Python
+a_instance = A()
+a_instance.append(1, 2, 3, 4, 5)
+search_number = 2
+any(item == search_number for item in a_instance) # True
+```
+
+If you have to implement this ```any``` method multiple times, you might be better of, overriding the ```__contains__``` special method:
+
+```Python
+class A:
+    def __init__(self) -> None:
+        self.my_collection: List[Any] = list()
+    def append(self, *args: List[Any]) -> None:
+        self.my_sequence.extend(args)
+    def __contains__(self, search_number: int) -> bool:
+        return any(item == search_number for item in self.my_collection)
+
+my_instance = A()
+my_instance.append(1, 2, 3, 4, 5)
+print(1 in my_instance) # True
+print(2 in my_instance) # True
+print(3 in my_instance) # True
+print(4 in my_instance) # True
+print(5 in my_instance) # True
+print(6 in my_instance) # False
+```
+
+You can see that from a design point of view, it looks a lot easier and it's a lot more practical.
+
+## Standard Library Extensions
+
+The standard library offers extensions to built-in classes. Some examples are ```deque```, ```ChainMap```, ```defaultdict```, ```Counter```.
+
+There are two collections that have been replaced by more advanced versions:
+
+* The ```namedtuple()``` collection has been replaced by the ```typing.NamedTuple``` class because it permits type hints.
+* The ```OrderedDict``` collection is not needed anymore, you can use the built-in ```dict``` collection since the feature of maintaining key order is now a first-class part of the built-in class ```dict``` is the special collection ```OrderedDict``` is not necessary anymore.
+
+### The ```typing.NamedTuple``` class
+
+The ```typing.NamedTuple``` class requires class attributes. These attributes will usually have type hints and provide a way to give names to attributes of the tuple.
+
+> Using a ```NamedTuple``` subclass can condense a class definition into a very short definition of a simple immutable object. It saves us from having to write longer and more complex class definitions for the common case where we want to name a fixed set of attributes.
+
+Example:
+
+```Python
+from typing import NamedTuple, List, str
+
+class Student(NamedTuple):
+    class_name: str
+    name: str
+    age: int
+    address: str
+    classes: List[str]
+```
+
+I won't go over the other collections in the standard library since they're trivial.
+
+## Creating new kinds of collections
+
+### The 4 step process to new collections
+
+When it comes to creating new types of collections you must follow the following process that contains of 4 steps:  
+
+1. Define the requirements. This may include research on data structures.
+2. Look at the ```collections.abc``` module to see what methods must be implemented to create the new functionality.
+3. Create test cases for the new data structure.
+4. Write code based on the previous research steps.
+
+The importance of researching the fundamentals has to be emphasized. See any of the following books:
+
+* *Introduction to Algorithms* by Cormen, Leiserson, Rivest and Stein
+* *Data Structures and Algorithms* by Aho, Ulmna and Hopcroft
+* *The Algorithm Design Manual* by Steven Skiena
+
+### ABCs kinds of collections and design strategies
+
+The ABCs defines three broad kinds of collections: sequences, mappings and sets.
+There are three design strategies that we can use to create new kinds of collections:
+
+* **Extend**: Extend an already existing collection
+* **Wrap**: Wrap an existing collection
+* **Invent**: Invent a new type of collection that is built from scratch
+
+Another design consideration would be choosing between eager and lazy calculation when it comes to certain values.
+
+### Narrowing a collection's type
+
+When it comes to type hinting python allows us to provide extensive type hints to our collections. This has the following advantages:
+
+* It helps us visualize the data structures
+* It helps running **mypy** to confirm that the code uses the data structure properly
+
+We already know about the basic type hints for non-collection types ( ```int```, ```float```, ```str```, ```complex```, etc. ) but you can also build type hints from the ```typing``` module for collections. You will probably often see ```from typing import List, Tuple, Dict, Set```
+
+Each of those type hints offers even more parameters and complexity in order to allow you to further narrow a collection's type:
+
+* The ```List[T]``` argument allows a list to only contain items of the type ```T```. A list of ```[1, 2, 3, 4, 5]``` can be described as a list of integers, so it's a ```List[int]```. Same principle goes for ```Set[T]``` for example.
+* The ```Dict[K, V]``` requires the object to be a dictionary and to contain key-value pairs of the type ```K``` ( for keys ) and ```V``` ( for values ). For example the dictionary ```{'a': 1, 'b': 2}``` might be described as a dictionary that contains key-value pairs of the type ```str``` and ```int```, so it would be ```Dict[str, int]```.
+
+The ```Tuple``` hint is more complex. There are two common cases for tuples:
+
+* A hint that looks for example like this: ```Tuple[str, int, int, int]``` only allows you to have a Tuple that contains 4 values of those exact types, for example: ```('string', 1, 2, 3)```. The size of the tuple and the order of the elements is crucial.
+* A hint such as ```Tuple[int, ...]``` describes a tuple of indefinite size that only contains items of type ```int```. The size is not specified.
+
+In order to describe values that might pe ```None```, the type hint ```Optional``` is used. If we want a list that contains a mixture of ```int``` and ```None``` values, we would use ```List[Optional[int]]```.
