@@ -1,4 +1,7 @@
 import datetime
+import json
+from BlogEncoder import blog_encode
+from BlogDecoder import blog_decode
 from Blog import Blog_x
 from Post import Post
 
@@ -19,3 +22,8 @@ travel_x.append(
         tags=["#test2", "#this_is_a_tag_2"]
     )
 )
+
+text = json.dumps(travel_x, indent=4, default=blog_encode)
+print(text)
+blog_data = json.loads(text, object_hook=blog_decode)
+print(blog_data)

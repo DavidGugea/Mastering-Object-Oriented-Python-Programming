@@ -11,10 +11,10 @@ class Post:
     tags: List[str]
 
     def as_dict(self) -> Dict[str, Any]:
-        return dict (
-            date = str(self.date),
-            title = self.title,
-            underline = "-" * len(self.title),
-            rst_text = self.rst_text,
-            tag_text = " ".join(self.tags)
+        return dict(
+            date=str(self.date),
+            title=self.title,
+            underline="-" * len(self.title),
+            rst_text=self.rst_text,
+            tag_text=" ".join(self.tags)
         )

@@ -1,0 +1,42 @@
+[
+  {
+    "__class__": "Post",
+    "__kw__": {
+      "date": {
+        "__class__": "datetime.datetime.strptime",
+        "__args__": [
+          "2013-11-14T17:25:00",
+          "%Y-%m-%dT%H:%M:%S"
+        ],
+        "__kw__": {}
+      },
+      "title": "Test Title 1",
+      "rst_text": "some text",
+      "tags": [
+        "#test",
+        "#this_is_a_tag"
+      ]
+    },
+    "__args__": []
+  },
+  {
+    "__class__": "Post",
+    "__kw__": {
+      "date": {
+        "__class__": "datetime.datetime.strptime",
+        "__args__": [
+          "2013-11-18T15:30:00",
+          "%Y-%m-%dT%H:%M:%S"
+        ],
+        "__kw__": {}
+      },
+      "title": "Test Title 2",
+      "rst_text": "some text 2",
+      "tags": [
+        "#test2",
+        "#this_is_a_tag_2"
+      ]
+    },
+    "__args__": []
+  }
+]
