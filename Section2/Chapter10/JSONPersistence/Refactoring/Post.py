@@ -16,5 +16,5 @@ class Post:
             title=self.title,
             underline="-" * len(self.title),
             rst_text=self.rst_text,
-            tag_text=" ".join(self.tags)
+            tag_text=" ".join(self.tags),
         )

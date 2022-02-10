@@ -12,7 +12,7 @@ def blog_encode_2(object: Union[Blog, Post, Any]) -> Dict[str, Any]:
         return dict(
             __class__="datetime.datetime.strptime",
             __args__=[object.strftime(fmt), fmt],
-            __kw__={}
+            __kw__={},
         )
     else:
         try:

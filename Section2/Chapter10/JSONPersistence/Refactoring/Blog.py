@@ -17,15 +17,12 @@ class Blog(list):
         return tag_index
 
     def as_dict(self) -> Dict[str, Any]:
-        return dict(
-            title=self.title,
-            entries=[p.as_dict() for p in self]
-        )
+        return dict(title=self.title, entries=[p.as_dict() for p in self])
 
     @property
     def _json(self) -> Dict[str, Any]:
         return dict(
             __class__=self.__class__.__name__,
             __kw__={},
-            __args__=[self.title, self.entries]
+            __args__=[self.title, self.entries],
         )

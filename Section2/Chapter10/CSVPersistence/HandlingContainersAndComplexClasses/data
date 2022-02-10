@@ -1,0 +1,4 @@
+__class__,title,date,title,rst_text,tags
+Blog,Travel,,,,
+Post,2013-11-14 17:25:00,Test Title 1,some text,"['#test', '#this_is_a_tag']"
+Post,2013-11-18 15:30:00,Test Title 2,some text 2,"['#test2', '#this_is_a_tag_2']"

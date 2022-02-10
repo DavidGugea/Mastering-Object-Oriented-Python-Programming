@@ -11,9 +11,13 @@ class Suit(str, Enum):
 
 
 class Card:
-    def __init__(self, rank: str, suit: Suit,
-                 hard: Optional[int] = None,
-                 soft: Optional[int] = None) -> None:
+    def __init__(
+        self,
+        rank: str,
+        suit: Suit,
+        hard: Optional[int] = None,
+        soft: Optional[int] = None,
+    ) -> None:
         self.rank = rank
         self.suit = suit
         self.hard = hard
@@ -34,21 +38,15 @@ class FaceCard(Card):
 
 
 def card_representer(dumper: Any, card: Card) -> str:
-    return dumper.represent_scalar(
-        "!Card", f"{card.rank!s}{card.suit.value!s}"
-    )
+    return dumper.represent_scalar("!Card", f"{card.rank!s}{card.suit.value!s}")
 
 
 def acecard_representer(dumper: Any, card: Card) -> str:
-    return dumper.represent_scalar(
-        "!AceCard", f"{card.rank!s}{card.suit.value!s}"
-    )
+    return dumper.represent_scalar("!AceCard", f"{card.rank!s}{card.suit.value!s}")
 
 
 def facecard_representer(dumper: Any, card: Card) -> str:
-    return dumper.represent_scalar(
-        "!FaceCard", f"{card.rank!s}{card.suit.value!s}"
-    )
+    return dumper.represent_scalar("!FaceCard", f"{card.rank!s}{card.suit.value!s}")
 
 
 yaml.add_representer(Card, card_representer)
@@ -78,11 +76,11 @@ yaml.add_constructor("!Card", card_constructor)
 yaml.add_constructor("!AceCard", acecard_constructor)
 yaml.add_constructor("!FaceCard", facecard_constructor)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     deck = [
         AceCard("A", Suit.Clubs),
         Card("2", Suit.Hearts),
-        FaceCard("K", Suit.Diamonds)
+        FaceCard("K", Suit.Diamonds),
     ]
     text = yaml.dump(deck, allow_unicode=True)
     print(text)

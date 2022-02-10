@@ -17,7 +17,4 @@ class Blog_x(list):
         return tag_index
 
     def as_dict(self) -> Dict[str, Any]:
-        return dict(
-            title=self.title,
-            entries=[p.as_dict() for p in self]
-        )
+        return dict(title=self.title, entries=[p.as_dict() for p in self])

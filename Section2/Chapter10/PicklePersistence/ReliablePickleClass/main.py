@@ -15,9 +15,13 @@ class Suit(str, Enum):
 
 
 class Card:
-    def __init__(self, rank: str, suit: Suit,
-                 hard: Optional[int] = None,
-                 soft: Optional[int] = None) -> None:
+    def __init__(
+        self,
+        rank: str,
+        suit: Suit,
+        hard: Optional[int] = None,
+        soft: Optional[int] = None,
+    ) -> None:
         self.rank = rank
         self.suit = suit
         self.hard = hard
@@ -49,6 +53,7 @@ class Hand_bad:
         cards = ", ".join(map(str, self.cards))
         return f"{self.dealer_card} | {cards}"
 
+
 class Hand2:
     def __init__(self, dealer_card: Card, *cards: Card) -> None:
         self.dealer_card = dealer_card
@@ -74,12 +79,8 @@ class Hand2:
             audit_log.info("Initial (unpickle) {0}".format(c))
 
 
-if __name__ == '__main__':
-    h = Hand2(
-        FaceCard("K", "♦"),
-        AceCard("A", "♠"),
-        Card("9", "♥")
-    )
+if __name__ == "__main__":
+    h = Hand2(FaceCard("K", "♦"), AceCard("A", "♠"), Card("9", "♥"))
     data = pickle.dumps(h)
     print(data)
     h2 = pickle.loads(data)

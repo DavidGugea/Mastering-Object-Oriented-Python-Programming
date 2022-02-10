@@ -12,9 +12,7 @@ class GameStat(NamedTuple):
 
 
 def gamestat_iter(
-        player: Type[Player_Strategy],
-        betting: Type[Betting],
-        limit: int = 100
+    player: Type[Player_Strategy], betting: Type[Betting], limit: int = 100
 ) -> Iterator[GameStat]:
     for sample in range(30):
         random.seed(sample)

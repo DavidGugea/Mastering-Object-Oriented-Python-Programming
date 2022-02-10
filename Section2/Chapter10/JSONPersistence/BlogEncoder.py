@@ -15,7 +15,7 @@ def blog_encode(object: Any) -> Dict[str, Any]:
                 day=object.day,
                 hour=object.hour,
                 minute=object.minute,
-                second=object.second
+                second=object.second,
             ),
         )
     elif isinstance(object, Post):
@@ -26,14 +26,12 @@ def blog_encode(object: Any) -> Dict[str, Any]:
                 date=object.date,
                 title=object.title,
                 rst_text=object.rst_text,
-                tags=object.tags
+                tags=object.tags,
             ),
         )
     elif isinstance(object, Blog_x):
         return dict(
-            __class__="Blog",
-            __args__=[object.title, object.entries],
-            __kw__={}
+            __class__="Blog", __args__=[object.title, object.entries], __kw__={}
         )
     else:
         return object
