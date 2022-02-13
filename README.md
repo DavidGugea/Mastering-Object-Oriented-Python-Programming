@@ -1339,6 +1339,8 @@ We can use the context manager as a factory as well. We can use the special meth
 
 # 7. Creating Containers and Collections
 
+**Documentation to the python data model: https://docs.python.org/3/reference/datamodel.html**
+
 There are a lot of options when it comes to containers and collections. We can either use the built-in containers ( lists, sets, dictionaries, etc. ) or we can use the collections library which includes things like deques, ChainMaps, etc.
 We also have the option to create our own containers by using the **abstract base classes** which also provides us with design guidelines and gives the users a general idea of what our new container is supposed to be used for and under what circumstances. However, it is very rare that you are going to need a new type of container.
 
@@ -1495,3 +1497,569 @@ The ```Tuple``` hint is more complex. There are two common cases for tuples:
 * A hint such as ```Tuple[int, ...]``` describes a tuple of indefinite size that only contains items of type ```int```. The size is not specified.
 
 In order to describe values that might pe ```None```, the type hint ```Optional``` is used. If we want a list that contains a mixture of ```int``` and ```None``` values, we would use ```List[Optional[int]]```.
+
+### Working with ```__getitem__()```, ```__setitem__()```, ```__delitem__()``` and slices
+
+
+Sequences have two different kinds of indexes:
+
+* ```a[i]```. This is a simple integer index
+* ```a[i:j]``` or ```a[i:j:k]```. These are ```slice``` expressions with ```start:stop:step``` values. Slice expressions can be quite compelx, with seven different variations for different kinds of values.
+
+The basic syntax works in three contexts:
+
+* In an expression, relying on ```__getitem__()``` to get a value
+* On the left-hand side of assignment, relying on ```__setitem__()``` to set a value
+* On a ```del``` statement, relying on ```__delitem__()``` to delete a value
+
+When we do something like ```seq[:-1]```, we write a ```slice``` expression. The underlying ```__getitem__()``` method will be given a ```slice``` object, instead of a simple integer.
+
+The reference manual tells us a few things about slices. A ```slice``` object will have three attributes: ```start```, ```stop``` and ```step```. It will also have a method function called ```indices()```, which will properly compute any omitted attribute values for a slice.
+
+So basically:
+
+```a = some_list[1]``` is when you access something from the list, so you want to get a value/an item. In this situation we call ```__getitem__(self, key)```. The key is in our example ```1```. The key can be an index or a ```slice``` object. A slice object contains 3 attributes: ```start```, ```stop``` and ```step``` and is called when we have something like ```a = some_list[1:2:3]```. In this case, the ```start``` is 1, ```stop``` is 2 and ```step``` is 3.
+
+If you want to set a specific item from the collection using ```collection[index] = new_value```, you will use ```__setitem__(self, key, value)``` where the ```key``` is the index and the ```value``` is the new value of the item at that ```key```.
+
+If you use the delete (```del```) statement : ```del collection[index]```, you will use the ```__delitem__(self, key)``` dunder method where the ```key``` is the index of the item that must be deleted.
+
+Here is a short example:
+
+```Python
+from typing import Any
+
+class TestContainer():
+    def __init__(self, *items: Any):
+        self.internal_list = [] if items is None else list(items)
+
+    def __setitem__(self, index: int, value: Any) -> None:
+        print("Execute __setitem__ with --> index : {0} && value : {1}".format(index, value))
+        self.internal_list[index] = value
+
+    def __delitem__(self, index: int) -> None:
+        print("Execute __delitem__ with -- > index : {0}".format(index))
+        del self.internal_list[index]
+
+    def __getitem__(self, key: Any) -> None:
+        print("Execute __getitem__ with -- > key : {0}".format(key))
+        return self.internal_list[key]
+
+    def __str__(self )-> str:
+        return str(self.internal_list)
+```
+
+## Wrapping a list and delegating
+
+We'll now look at how we can wrap a built-in container in a made up collection. There is a substantial amount of code that comes in play when we have to wrap a container since we have to delegate a considerable amount of methods to it. 
+This is useful when we want to restrict certain methods for example. A common restriction that applies to statistics data classes is that thye need to be *insert only* which means that our built-in list container is perfectly fine, it just needs to have some methods restricted from the outside. There are of course other usefull application where we can apply this design of wrapping built-in containers. In our example with the statistical data, we'll be disabling a number of method functions. This is the kind of dramatic change in the class features that suggests using a wrapper class instead of an extension.
+
+### Creating iterators with ```__iter__()```
+
+When our design involves wrapping an exisitng container we have to make sure that our class is iterable. We can of coures again look at the ABCs for containers and see that there is a class called ```collections.abc.Iterable```. When using that ABC class we will only need to implement one single dunder method, that being ```__iter__()``` in order to make an object iterable. **The ```__iter__()``` method can either retrun a proper ```Iterator``` object, or it can be a generator function.**
+
+> Creating an ```Iterator``` object, while not terribly complex, is rarely necessary. It's much simpler to create generator functions. For a wrapped collection, we should always simply delegate the ```__iter__()``` method to the underlying collection.
+
+Example:
+
+```Python
+from typing import Any
+import collections.abc
+
+class TestContainer(collections.abc.Iterable):
+    def __init__(self, *items: Any):
+        self.container = [] if items is None else list(items)
+
+    def __iter__(self):
+        return iter(self.container)
+
+container = TestContainer(1, 2, 3, 4, 5)
+
+# Iterator over the container object and print : 1 2 3 4 5
+for i in container:
+    print(i)
+```
+
+## Creating a new kind of set/container
+
+> Creating a whole new collection requires some preliminary work. We need to have new algorithms or new internal data structures that offer significant improvements over the built-in collections. It's important to do thorough Big-O complexity calculations before designing a new collection. It's also important to use ```timeit``` after an implementation to be sure that the new collection really is an improvement over available built-in classes.
+
+## Design considerations and tradeoffs
+
+When working with containers and collections we have a multistep design strategy:
+
+1. Consider the built-in versions of sequence, mapping and set.
+2. Consider the library extensions in the collection module, as well as extras such as ```heapq```, ```bisect``` and ```array```.
+3. Consider a composition of existing class definitions. In many cases, a list of ``tuple``` objects or a ```dict``` of lists provides the needed features.
+4. Consider extending one of the earlier mentioned classes to provide additional methods or attributes.
+5. Consider wrapping an existing structures as another way to provide additional methods or attributes.
+6. Finally, consider a novel data structure. Generally, there is a lot of careful analysis avaiable. Start with Wikipedia articles such as this one: https://en.wikipedia.org/wiki/List_of_data_structures.
+
+Once the design alternatives have been identified, there are two parts of the evalution left:
+
+* How well the interface fits with the problem domain. This is a relatively subjective determination.
+* How well the data structure performs as measured with ```timeit```. This is an entirely objective result.
+
+It's important to avoid the paralysis of analysis. We need to *effectively* find the proper colleciton.
+
+In most cases, it is best to profile a working application to see which data structure is the performance bottleneck. In some cxases, consideration of the complexity factors for a data structure will reveal its suitability for a particular kind of problem before starting the implementation.
+
+**Perhaps the most important consideration is this: for the highest performance, avoid search**.
+
+Avoiding search is the reason sets and mappings reuqire hashable objects. A hashable objectx can be located in a set or mapping with almost no processing. Locating an item by value ( not by index ) in a list can take a great deal of time.
+
+# 8. Creating Numbers
+
+We can extend the ABC abstractions in the ```numbers``` (https://docs.python.org/3/library/numbers.html) module to create new kinds of numbers. We can do this in order to create numbers that fit our problem domain more precisely. The abstractions in the ```numbers``` module need to be looked at first, because they define the existing built-in classes. Before working with new kinds of numbers, it's essential to see how the existing numbers work.
+
+## Deciding which types to use
+
+There are four general domains of numerical processing:
+
+* **Complex**: This domain is used once we get involved in complex math. We will use ```complex```, ```float``` and the ```cmath``` module.
+* **Currency**: For currency-related operations we must use ```Decimal```. When we do currency-related operations it's generally a bad idea to mix ```decimal``` values with non-decimal values. We can't use ```float``` either since ```float``` values are approximations and that is absolutely unacceptable when working with currency.
+* **Bit Kicking**: For operations that involve bit and byte processing, we'll generally only use ```int```.
+* **Conventional**: This is a broad category where *everything else* can be put in.
+
+> These are generally obvious aspects of a given problem domain. It's often easy to distinguish applications that might involve science or engineering and complex numbers from applications that involve financial calculations, currency, and decimal numbers. It's important to be as permissive as posisble in the numeric types that are used in an application. **Needlessly narrowing the domain of types via the ```isinstance()``` test is often a waste of time and code.**
+
+## Method resolution and the refelcted operator concept
+
+The arithmetic operators ( +, -, *, / ,//, %, **, etc. ) are all mapped to special methods. When we write ```1+2``` for example, what actually happens behind the scenes, is, python takes the left-most operand and execute the method that is mapped to the arithemtic operator on the right-most operand. So ```1+2``` would be ```1.__add__(2)``` since the ```+``` operator maps to the ```__add__()``` special method. The simplest rule is that the left-most operand determines the class of the operator being used.
+
+There are however cases where we do this differently. Let's take a look at the following example:
+
+If you have the following expression: ```2 - 0.5``` you might think that we will take the most operand and apply the dunder method that maps to the ```-``` arithmetic operation, which would be ```__sub__()```, so we would have ```2.__sub__(0.5)```. This is however wrong. As you can see we have 2 numbers of different types. One number is an integer and the other number is a float. If we would use the integer to be the leader of the operation, we would lose precision since integers are more general than float numbers. **Converting up the tower of types ( from ```int``` toward ```complex``` ) won't lose precision. Converting down the tower of types implies a potential loss of precision.**
+In this example, we will use the right-hand side operand since we won't lose any precision that way. We won't use the ```__sub__()``` method since that is for left-side operands, we will have to use the ```__rsub__()``` method. So, in our case ```2-0.5``` would be ```0.5.__rsub__(2)```.
+
+The ```__rsub__()``` operation is called **reflected subtraction**. The ```a.__sub__(b)``` operation is the expected subtraction while the ```b.__rsub__(a)``` is the reflected subtraction; the implementation method in the latter comes from the right-hand side operand's class. So far, we've seen the following two rules:
+
+1. Rule one: try the left-hand side operand's class first. If that works, good. If the operan return ```NotImplemented``` as a value, then use rule two.
+2. Rule two: try the right-hand side operand with the reflected operator. If that works, good. If it returns ```NotImplemented```, then it really is not implemented, so an exception must be raised.
+
+The notable exception is when the two operands happend to have a subclass relationship.
+
+The following additional rule applies before the first pair rules as a special one:
+
+* If the right operand is a subclass of the left, and the subclass defines the reflected special method name for the operator, then the subclass reflected operator will be tried. This allows a subclass override to be used, even if the subclass operand is on the right-hand side of the operator.
+* Otherwise, use rule one and try the left side.
+
+## The arithmetic operators special methods.
+
+|Method|Operator|
+|------|--------|
+|```object.__add__(self, other)```|+|
+|```object.__sub__(self, other)```|-|
+|```object.__mul__(self, other)```|*|
+|```object.__truediv__(self, other)```|/|
+|```object.__flooridv__(self, other)```|//|
+|```object.__mod__(self, other)```|%|
+|```object.__divmod__(self, other)```|divmod()|
+|```object.__pow__(self, other[, modulo])```|pow() as well as **```**```**|
+
+Remember that for every expected operation, there is also a reflected one. ( Example: ```__rsub__()``` ).
+
+> A unary operation is an operation with only one operand. As unary operations have only one operand, they are evaluated before other operations containing them.Common unary operators include Positive (+) and Negative (-).
+> Unary positive also known as plus and unary negative also known as minus are unique operators. The plus and minus when used with a constant value represent the concept that the values are either positive or negative. 
+(from [source](https://press.rebus.community/programmingfundamentals/chapter/unary-operations/#:~:text=Unary%20positive%20also%20known%20as,are%20either%20positive%20or%20negative))
+
+Here are the unary operators and functions:
+
+### Unary operators and methods
+
+
+|Method|Operator|
+|------|--------|
+|```object.__neg__(self, other)```|-|
+|```object.__pos__(self, other)```|+|
+|```object.__abs__(self, other)```|abs()|
+|```object.__complex__(self, other)```|complex()|
+|```object.__int__(self, other)```|int()|
+|```object.__float__(self, other)```|float()|
+|```object.__round__(self, other[, n])```|round()|
+|```object.__trunc__(self, other[, n])```|math.trunc()|
+|```object.__ceil__(self, other[, n])```|math.ceil()|
+|```object.__floor__(self, other[, n])```|math.floor()|
+
+### Comparison operators and methods
+
+|Method|Operator|
+|------|--------|
+|```object.__lt__(self, other)```|<|
+|```object.__le__(self, other)```|<=|
+|```object.__eq__(self, other)```|==|
+|```object.__ne__(self, other)```|!=|
+|```object.__gt__(self, other)```|>|
+|```object.__ge__(self, other)```|>=|
+
+### Bitwise operators and methods
+
+|Method|Operator|
+|------|--------|
+|```object.__lshift__(self, other)```|<<|
+|```object.__rshift__(self, other)```|>>|
+|```object.__and__(self, other)```|&|
+|```object.__xor__(self, other)```|^|
+|```object.__or__(self, other)```|```|```|
+|```object.__invert__(self)```|~|
+
+### In-place operators and methods
+
+|Method|Operator|
+|------|--------|
+|```object.__iadd__(self, other)```|+=|
+|```object.__isub__(self, other)```|-=|
+|```object.__imul__(self, other)```|*=|
+|```object.__itruediv__(self, other)```|/=|
+|```object.__ifloordiv__(self, other)```|//=|
+|```object.__imod__(self, other)```|%=|
+|```object.__ipow__(self, other[, modulo])```|**=|
+|```object.__ilshift__(self, other)```|<<=|
+|```object.__irshift__(self, other)```|>>=|
+|```object.__iand__(self, other)```|&=|
+|```object.__ixor__(self, other)```|^=|
+|```object.__ior__(self, other)```|```|=```|
+
+# 9. Decorators and Mixins - Cross-Cutting Aspects
+
+Cross-Cutting concerns represent aspects of our application that cut through the implementation of multiple structures. Such concerns might be for example logging, security or even transaction management. One way of reusing functionality in OOP is to use inheritance. However, inheritance doesn't always work out well. 
+
+A decorator provides a way of defining functionality that is not bound to the inheritance hierarchy. We can use decorator in order to define an certain aspects of our application and then spread them around our application withG$ classes, methods or functions.
+
+Another way of dealing with cross-cutting concerns would be multiple inheritance.
+
+> It's important to note that corss-cutting concerns are rarely specific to the application at hand. They're often generic considerations. The common examples of logging, auditing, and security could be considered as infrastructure separate from the application's details.
+
+## Class and meaning
+
+Objects can be classified. Every object belongs to a certain class. This leads to a straightforward relationship between object and class. However, this is only the case when we are looking at single-inheritance design.
+
+When we involve multiple-inheritance, the classification problem can become more complex since a class can now inherit from multiple classes. When we look for example at a coffe cup, we can clearly see that it is a container. But we don't only look at it as a simple container. There are more attributes that it can have, other than just how much liquid it can contain. When we look at a coffe cup we see multiple things. We can see a container, a certain type of material, certain paintings, shape, glaze, etc. A cup of coffe is not just a simple container, it inherits multiple attributes from different kinds of classes.
+
+Most objects have a simple straightforward ***```is-a```** with a class. In our coffe-cup problem domain, the coffe cup won't be able to have a straightforward is-a relationship with the container class, since a coffe-cup is so much more than a container.
+
+> Generally, these other features can be seen as mixin classes, and they define the additional interfaces or behaviors for an object. The mixing classes may have their own hierarchies, for example, ceramic art is a specizliation of the mroe general sculpture and art classes.
+
+> When doing object-oriented design in Python, it's helpful to identify the ```is-a``` class and the essential aspects define by that class. Other classes provide ```acts-as``` aspects, which mix in additional interfaces or behavior for an object.
+
+
+
+## Type hints and attributes for decorators
+
+There are 2 stages when it comes to building decorators. The first stage is creating a function and the second stage involves the application of the decorator.
+
+When we apply a decorator (```@decorator```) to a function ```F```, it is as if we've created a new function ```F'``` that is equal to ```F'=@decorator(F)```. The name of the function stays the same, but it's functionality will be different.
+
+This is an example of applying a decorator to a function:
+
+```Python
+@decorate
+def function():
+    pass
+```
+
+***This is the same as writing:***
+
+```Python
+def function();
+    pass
+
+function decorate(function)
+```
+
+> The decorator modifies the function definition to create a new function. The essential technique here is that a decorator function accepts a function and returns a modified version of that function.
+
+We can also apply multiple decorators and they will all be executed as nested function calls:
+
+```Python
+@decorator1
+@decorator2
+def function():
+    pass    
+```
+
+***Is the same as writing:***
+
+```Python
+def function():
+    pass
+
+function = decorator1(decorator2(function))
+```
+
+The following is a typical set of type hints required to define a decorator:
+
+```Python
+from typing import Any, Callable, TypeVar, cast
+
+FuncType = Callable[..., Any]
+F = TypeVar('F', bound=FuncType)
+
+def my_decorator(func:F) -> F:
+    ...
+```
+
+## Attributes of a function
+
+A decorator can change the attribute of a function. Here is a table with the attributes of a function:
+
+|Name|Description|
+|----|-----------|
+|```__doc__```|The docstring, or none|
+|```__name__```|The original name of the function|
+|```__module__```|The name of the module the function was defined in, or none|
+|```__qualname```|The function's fully-qualified name, ```__module__.__name__```|
+|```__defaults__```|The default argument values, or none if there are no defaults|
+|```__kwdefaults__```|The default values for keyword-only parameters|
+|```__code__```|The code object representing the compiled function body|
+|```__dict__```|A namespaces for the function's attributes|
+|```__annotations__```|The annotations of parameters, including '```return```' for the return annotation|
+|```__globals__```|The global namespace of the module that the function was define in; this is used to resolve global variable and is read-only|
+|```__closure__```|Bindings for the function's free variables or none; it is read-only|
+
+Except for ```__globals__``` and ```__closure__```, a decorator can change any of these attributes.
+
+## MRO
+
+Regardless if we are talking about multiple or single inheritance every object's class defines a ***Method Resolution Order ( MRO )*** .
+The MRO is just like the prototype chain in JavaScript. When we are looking for a method, we start at the first class that is in the MRO which always the object's class. Afterwards, we move up the inheritance chain, which is the MRO. Example:
+
+```
+class test1(test2, test3, test4):
+    ...
+```
+
+***The MRO if the class ```test1``` will be : ```(test1, test2, test3, test4, object)```***
+In our example the class ```test1``` inherits from 3 classes ( 4 including the ```object``` class which we never see ). 
+When we want to access an attribute from an instance of the class test1, we start looking at the first class from the MRO, which is test1 and we can go up the ladder up to the last class, which is the ```object``` class in order to find an attribute.
+
+When you use multiple inheritence it's important to know how to make use the ```super``` keyword.
+
+Here is the documentation for ```super([type[, object-or-type]])```
+> Returns a proxy object that delegates method calls to a parent or sibling class of type. This is useful for accessing inherited methods that have been overridden in a class.
+
+> The object-or-type determines the method resolution order to be searched. The search starts from the class right after the type.
+
+> For example, if __mro__ of object-or-type is D -> B -> C -> A -> object and the value of type is B, then super() searches C -> A -> object.
+
+> The __mro__ attribute of the object-or-type lists the method resolution search order used by both getattr() and super(). The attribute is dynamic and can change whenever the inheritance hierarchy is updated.
+
+So basically let's say that your MRO looks like this: ```(Test4, Test3, Test2, Test1)```. If you are in the class ```Test4``` and you want to access the ```Test2``` super class, you will have to use ```super(Test3, self)```. The ```type``` argument specifies after which class you want to start doing your search in the MRO and the ```object-or-type``` argument specifies which MRO to search.
+
+Example with arguments:
+
+```Python
+class Test1:
+    def __init__(self, a):
+        self.a = a
+        print("Calling test 1")
+
+
+class Test2:
+    def __init__(self, b):
+        self.b = b
+        print("Calling test 2")
+
+
+class Test3:
+    def __init__(self, c):
+        self.c = c
+        print("Calling test 3")
+
+
+class Test4(Test3, Test2, Test1):
+    def __init__(self, a, b, c, d):
+        super(Test2, self).__init__(a) # Test 1
+        super(Test3, self).__init__(b) # Test 2
+        super(Test4, self).__init__(c) # Test 3
+
+        self.d = d
+        print("Calling test 4")
+
+
+test = Test4(1, 2, 3, 4)
+print(test.a)
+print(test.b)
+print(test.c)
+print(test.d)
+```
+
+## Constructing a decorated class.
+
+The first stage when it comes to decorating classes is of course, building the class definition with it's methods and properties.
+The second stage in class construction if s to apply an overall class decorator to a class definition. This is generally made in order to add features. It's more common to add attributes rather than methods. It's very hard to maintain the class if you decide to add methods since the maintainers have to locate the source for a method that was injected by the decorator.
+
+> The features inherited from the superclasses cannot be modified through decorators since they are resolved lazily by method resolution lookup. This leads to some important design considerations. We generally want to introduce methods and attributes through classes and mixing classes. We should limit ourselves to defining new attributes via decorators.
+
+Here is a table of some of the attributes that are built for a class:
+
+|Attribute|Description|
+|---------|-----------|
+|```__doc__```|The class's documentation string, or none if undefined|
+|```__name__```|The class name|
+|```__module__```|The module name that the class was defined in|
+|```__dict__```|The dictionary containig the class's namespace |
+|```__bases__```|A tuple ( possibly empty or a singleton ) containing the base classes, in the order of their occurrence in the base class list; it is used to work out the method resolution order|
+|```__class__```|the superclass of this class, often type|
+
+## Some class design principles
+
+When defining a class, we have the following sources of attributes and methods:
+
+* Any decorators applied to the class definition. These are applied to the definition last.
+* The body of the class statement.
+* Any mixin classes. These definitions tend to override the base class definitions in the method resolution order algorithm.
+* The base class. If unspecified, the base class is ```object```, which provides a minimal set of definitions.o
+
+These are presented in order of their visibility. The final changed from a decorator overwrite everything below it, making these changes most visible. The body of the class statement overrides anything inherited from mixing or the base class. The base class it the last place used to resolve names.
+
+We need to be cognizant about how easy it is for software maintainers to see each of these. The ```clas``` statement is the most obvious place for someone to look for the definition of an attribute or methods. The mixins and the base class are somewhat less obvious than the class body. It's helpful to make sure that the base class name clarifies its role and uses terminology that is clearly essential. For exapmle, it helps to name base classes after real-world objects.
+
+The application of the decorator to the class can lead to obscure features. A strong focus on one or a few features helps to clarify what the decorator does. While some aspects of an application can be suitable for generic decorators, the lack of visibility can make them difficult to test, debug, and maintain.
+
+> When writing the ```class``` statement, the mixins are listed first, and the essential superclass is lsited last. This is the search order for name resolution. The last listed class is the class that defines the essential ```is-a``` relationship. The last class on a list defines what a thing **IS**. The previous class names can define what a thing **DOES**. The mixins provide ways to override or extends this base behavior.
+
+## Aspect-oriented programming
+
+Some parts of aspect-oriented programing are implemented through decorators. The idea of aspect oriented programming is to separate cross-cutting concerns from the actual code. Example of cross-cutting concerns as: Logging, Auditability, Security, Transaction Management etc.
+
+The pythonic approach to AOP involves the use of decorators and mixins:
+
+* **Decorators**: Decorators enable you to establish a consistent aspect implementation at one of two simple join points in a function ( start and end ). We can perform the aspect's processing before or after the existing function. We cna't easily locate join points inside the code of a function.
+* **Mixins**: Using mixins we can identify a class as being a component of multiple class hierarchies. The mixin classes can be used with the base class to provide functionality for cross-cutting aspects. Generally, mixin classes are considered abstract, since they can't be meaningfully instantiated.
+
+## Using built-in decorators and standard library decorators
+
+We already know some built-in decorators like ```@classmethod```, ```@staticmethod``` and ```@property```. The ```@property``` decorator transforms a method into a descriptor and getter and then you can also use that "method" to built a setter and deleter. The ```@classmethod``` and ```@staticmethod``` decorators are self-explanatory.
+
+The standard library has a lot of decorators. Modules such as ```contextlib```, ```functools```, ```unittest```, ```atextit```, ```importlib``` and ```reprlib``` contain a bunch of decorators.
+
+One very interesting decorator is from the ```functools``` library and that is the ```functools.total_ordering``` decorator which offers missing comparison operators. It leverages ```__eq__()``` and either ```__lt__()```, ```__le__()```, ```__gt__()``` or ```__ge__()``` to create a complete suite of comparisons. 
+You don't need to define all comparison operators. It only needs ```__eq__()``` and one of the other four. 
+
+Example:
+
+```Python
+import functools
+
+@functools.total_ordering
+class Test:
+    def __init__(self) -> None:
+        ...
+
+    def __lt__(self, other) -> bool:
+        ...
+
+    def __eq__(self, other) -> bool:
+        ...
+```
+
+Every instance that you will make of a class with this kind of structure will contain all comparison operators. Even if the class doesn't implement all the comparison operators, it does contain the ```__eq__()``` operator and one of the 4 other comparison operators, which makes it enough for the decorator ```@functools.total_ordering``` to implement the rest of them.
+
+## Using standard library mixin classes.
+
+When we defines our own collection and implement abstract classes from the ```collections.abc``` abstract base classes collection we're making use of mixins to ensure that cross-cutting aspects of the containers are defined consistently. Even the top level containers ( ```Set```, ```Sequence``` and ```Mapping``` ) are all built from multiple mixins.
+
+The ```Sequence``` ABC inherits for example from ```Sized```, ```Iterable``` and ```Container```.
+
+> The final behavior of the ```list``` class is a composition of aspects from each of the mixins present in its definition. Fundamentally, it's a ```Container``` with numerous protocols added to it.
+
+## Using the enum with mixin classes
+
+The enum library contains the Enum class. The most cmmon use case for this class it o define an enumerated domain of values.
+
+An enumerated type has the following two features:
+
+* **Member names**: The member names are proper Python identifiers for the enumerated values.
+* **Member values**: The memeber values can be any Python object
+
+We can combine the enum class with other mixin classes:
+
+```Python
+from enum import Enum
+
+class Enums(str, Enum):
+    value1 = "test1.test1"
+    value2 = "test2.test2"
+    value3 = "test3.test3"
+    value4 = "test4.test4"
+```
+
+The ```Enum``` class is the base class. We have an additional mixin class, that being the ```str``` class. **This class will be available to each memeber**. 
+
+> The order of the definitions is important: **the mixins are listed first; the base class is listed last.**
+
+Because we have mixed in the ```str``` class, we have provided all the methods of the ```str``` class to each of our members. We can now write something like:
+
+```Python
+split_value = Enums1.value1.split(".")
+```
+
+> This mixin technique allows us to bundle features together to create complex class definitions from separate aspects.
+
+> ***A mixin design is better than copy and paste among several related classes***
+
+> It can be difficult to create classes that are generic enough to be used as mixins. One approach is to look for duplicated copypast code across multiple classes. The presence of duplicated code is an indication of a possible mixin to refactor and eliminate the duplication.
+
+## Writing a simple function decorator
+
+A ```decorator``` function is a function ( or a callable object ) that takes in a function as a parameter and returns a new function. The result of the decorations is a function that has been wrapped up.
+
+> Generally, the additional features of the wrapping surround the original functionality, either by transforming actual argument values or by transforming the reuslt value. These are the two readily available join points in a function.
+
+When we build a decorator we want to make sure that the decorated/wrapped up function keeps its name and its ```docstring```. These details can be handled for us by a decorator to build our decorators. Using ```functools.wraps``` to write new decorators helps us ensure that the wrapped up function doesn't change its name and ```docstring```. The bookkeeping is handled for us.
+
+When it comes to type hinting things can get confusing very quick since the parameters and return types are both essentialy of the ```Callable``` type. To be properly generic, we'll use an upper-bound type definition to define a type, ```F```, which embraces any variation on callable objects or functions.
+
+Let's look at the following example where we emphasize a situation where a decorator can come in handy. 
+We want to log the time before a function is execute and then the end time after a function is executed. We could look at this as a cross-cutting concern. One option would be to manually log the time inside the function or right where the function is executed:
+
+```Python
+print(datetime.datetime.now())
+result = function()
+print(datetime.datetime.now())
+```
+
+or:
+
+```Python
+def function(): 
+    print(datetime.datetime.now())
+    # Implementation
+    print(datetime.datetime.now())
+
+function()
+```
+
+This is however very inconvinient and if we were talking about a real-world application, this would look a lot harder to maintain. This is where decorators come in to play.
+
+We can use a decorator to wrap this function up and log the time automatically inside the decorator itself.
+
+Example:
+
+```Python
+import functools
+import datetime
+from typing import Callable, TypeVar, cast, Any
+
+FuncType = Callable[..., Any]
+F = TypeVar('F', bound=FuncType)
+
+def log_time(function:F) -> F:
+    @functools.wraps(function)
+    def logged_function(*args, **kwargs):
+        print(datetime.datetime.now())
+        function(*args, **kwargs)
+        print(datetime.datetime.now())
+
+    return cast(F, logged_function)
+
+
+@log_time
+def function(a, b):
+    print(a+b)
+```
+
+The ```TypeVar``` function from the ```typing``` module represents a type variable. Type variables serve as the parameters for generic types as well as for generic function definitions. That type variable is bound to the ```Callable[..., Any]``` type which is stored in the ```FuncType``` variable. The ```Callable[..., Any]``` type hint represents a callable that takes in any number of arguments and returns ```Any``` kind of output.
+
+We have used the ```@functools.wraps``` decorator to ensure that the wrapped up function keeps its name and ```docstring```.
