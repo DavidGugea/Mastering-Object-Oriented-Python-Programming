@@ -2035,7 +2035,7 @@ This is however very inconvinient and if we were talking about a real-world appl
 
 We can use a decorator to wrap this function up and log the time automatically inside the decorator itself.
 
-Example:
+Example:G$
 
 ```Python
 import functools
@@ -2063,3 +2063,169 @@ def function(a, b):
 The ```TypeVar``` function from the ```typing``` module represents a type variable. Type variables serve as the parameters for generic types as well as for generic function definitions. That type variable is bound to the ```Callable[..., Any]``` type which is stored in the ```FuncType``` variable. The ```Callable[..., Any]``` type hint represents a callable that takes in any number of arguments and returns ```Any``` kind of output.
 
 We have used the ```@functools.wraps``` decorator to ensure that the wrapped up function keeps its name and ```docstring```.
+
+## Parameterizing a decorator
+
+When you want to give arguments to decorators, the process will look something like this:
+
+```Python
+@decorator(argument)
+def function():
+    pass
+```
+
+which is basically:
+
+```Python
+def function():
+    pass
+
+function = decorator(argument)(function)
+```
+
+Instead of ```function = decorator(function)``` we now added argument to our decorator, so it's ```function = decorator(argument)(function)```. You can obviously add more arguments to your decorator. Our decorator is not ```decorator``` anymore, our decorator will now be ```decorator(argument)```.
+
+It's like writing:
+
+```Python
+concrete_decorator = decorator(argument)
+function = concrete_decorator(function)
+```
+
+Here is how the implementation of a simple decorator with arguments and one without arguments looks like:
+
+```Python
+from typing import Callable, Any, TypeVar, cast
+import functools
+
+CallableFunction = Callable[..., Any]
+F = TypeVar("F", bound=CallableFunction)
+
+
+def normal_decorator(function: F) -> F:
+    @functools.wraps(function)
+    def wrapped_function(*args, **kwargs):
+        print("Before function execution")
+        function(*args, **kwargs)
+        print("After function execution")
+
+    return cast(F, wrapped_function)
+
+
+def decorator_with_arguments(a: int, b: int) -> Callable[[F], F]:
+    def concrete_decorator(function: F) -> F:
+        @functools.wraps(function)
+        def wrapped_function(*args, **kwargs):
+            print("Before function execution. a -- > {0}".format(a))
+            function(*args, **kwargs)
+            print("After function execution. b -- > {0}".format(b))
+
+        return cast(F, wrapped_function)
+
+    return concrete_decorator
+
+
+@decorator_with_arguments(1, 2)
+def function():
+    print("Inside the function")
+```
+
+> A decorator for a method of a class definition is identical to a decorator for a standalone function. While it's used in a different context, it will be defined like any other decorator. One small consequence of the different context is that we often, must explicitly name the ```self``` variable in decorators intended for methods.
+
+## Creating a class decorator
+
+When it comes to class decorators, there aren't many differences in comparison to function/method decorators. The essential rules are the same. The decorator is a function ( or a callable object ) that receives a class object as an argument and returns a class object as a result.
+
+A simple class decorator is just like a function. All decorators are essentially the same. They must accept a function as an argument and be a callable object. All we have to do is to make our class a callable object and accept the function that is given to us in the constructor. Example:
+
+```Python
+class class_decorator:
+    def __init__(self, function: F) -> None:
+        self.function = function
+
+    def __call__(self, *args, **kwargs):
+        print("Before function execution")
+        self.function(*args, **kwargs)
+        print("After function execution")
+
+
+@class_decorator
+def function(*args):
+    print("Inside the function. Arguments given to the function : {0}".format(args))
+```
+
+When it comes to giving argument to a class decorator, things very similar as well. Here is an example:
+
+```Python
+def class_decorator_with_arguments(*class_args, **class_kwargs):
+    class concrete_decorator_class:
+        def __init__(self, function, *args, **kwargs):
+            self.function = function
+            self.class_args = class_args
+            self.class_kwargs = class_kwargs
+
+            print(self.function)
+            print(self.class_args)
+            print(self.class_kwargs)
+
+            """
+            Console output here:
+
+            <function function at 0x7fef5a429ee0>
+            (1, 2)
+            {'a': 3, 'b': 7}
+            """
+
+        def __call__(self, *function_args, **function_kwargs):
+            print("Before function execution. Class args : {0}".format(self.class_args))
+            self.function(*function_args, **function_kwargs)
+            print(
+                "After function execution. Class kwargs : {0}".format(self.class_kwargs)
+            )
+
+    return concrete_decorator_class
+
+
+@class_decorator_with_arguments(1, 2, a=3, b=7)
+def function(*args, **kwargs):
+    print("Inside the function. Arguments given to the function : {0}".format(args))
+```
+
+The ```function``` will be given automatically to the class. After the function was given to the class, the ```*class_args``` and ```**class_kwargs``` arguments are next.
+
+## ```__init_subclass__```
+
+From the python [data model documentation for ```__init_subclass__```]https://docs.python.org/3/reference/datamodel.html#object.__init_subclass__() we can see that the ```__init_subclass__(cls)``` method is called whenever the containing class is subclassed. It is only called once, when it is subclassed, it is not called for every single instance. It can be used in order to add certain functionality to certain subclasses based on some arbitrary criteria.
+
+```Python
+class BaseClass:
+    def __init_subclass__(cls, *args, **kwargs):
+        super().__init_subclass__(*args, **kwargs)
+        cls.special_property_from_init_subclass = 4
+    
+    def __init__(self, a: int, b: int) -> None:
+        self.a = a
+        self.b = b
+
+
+class Test(BaseClass):
+    def __init__(self, a: int, b: int, c: int) -> None:
+        super().__init__(a, b)
+        self.c = c
+
+
+test = Test(1, 2, 3)
+print(test.a)
+print(test.b)
+print(test.c)
+print(test.special_property_from_init_subclass)
+
+"""
+Output:
+
+1
+2
+3
+4
+"""
+```
