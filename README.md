@@ -1,7 +1,7 @@
 # Mastering Object Oriented Python Programming
 
 
-## Section 1: Tighter Integration Via Special**
+## Section 1: Tighter Integration Via Special
 
 ## 1. Preliminaries, Tools, and Techniques
 
@@ -50,6 +50,10 @@
 ## 19. Module and Package Design
 
 --- 
+---
+
+# Section 1
+
 ---
 
 # Chapter 2. The ```__init__()``` Method
@@ -2195,7 +2199,7 @@ The ```function``` will be given automatically to the class. After the function 
 
 ## ```__init_subclass__```
 
-From the python [data model documentation for ```__init_subclass__```]https://docs.python.org/3/reference/datamodel.html#object.__init_subclass__() we can see that the ```__init_subclass__(cls)``` method is called whenever the containing class is subclassed. It is only called once, when it is subclassed, it is not called for every single instance. It can be used in order to add certain functionality to certain subclasses based on some arbitrary criteria.
+From the python [data model documentation for ```__init_subclass__```](https://docs.python.org/3/reference/datamodel.html#object.__init_subclass__()) we can see that the ```__init_subclass__(cls)``` method is called whenever the containing class is subclassed. It is only called once, when it is subclassed, it is not called for every single instance. It can be used in order to add certain functionality to certain subclasses based on some arbitrary criteria.
 
 ```Python
 class BaseClass:
@@ -2229,3 +2233,265 @@ Output:
 4
 """
 ```
+
+---
+---
+
+# Section 2
+
+---
+
+# 10.  Serializing and Saving - JSON, YAML, Pickle, CSV and XML
+
+## Introduction
+
+In order to make a Python object persistent we must convert it to bytes and save the bytes to a file. We call this process ***serialization*** ( also called *marshaling*, *deflaiting* or *encoding* ). We will look at several ways to serialize a Python object to a stream of bytes. It's important to note that we are focusing on representing the state of the object, disregarding the class that it's made from, its methods and superclasses.
+
+A serialization scheme includes a **physical data format**. Each format offers some advantages and disadvantages. There is no *best* format to represent the state of objects.
+
+## Understanding persistence, class, state and representation
+
+Generally, python objects only exist in *volatile* computer memory. This is constrained even more by objects that only exist if there are references to it ( otherwise they would get deleted by garbage collectors ). In order to save the state of an object, we have to make it persistent. The same serialization techniques apply if we want to transfer the state of the object from a process to another process. 
+
+Most operating systems offer persistent stoarge in the form of a filesystem. This can be disk drivers, flash drives or any other form of *non-volatile* storage. Persisting the bytes from the memory to the filesystem turns out to be quite a difficult process.
+
+The complexity arises because the objects that we want to make persistent have references to other objects. An object belongs for example to a class. The class will contain one if not several subclasses. If the object is used as a container, it has references to all the items that it contains. References are based on the locations in memory, which are not fixed.
+
+Objects that are referenced to the objects that we want to persist are largely static. Class definitions change much slower compared to instance variables within an object. Serialization techniques focus on persisting the dynamic state of an object based on its instance variables.
+
+> We don't actually have to do anything extra to persist class definitions; we already have a very simple method for handling classes. Class definitions exist primarily as source code. The calss definition in the volatile memory is rebuilt from the source ( or the byte-code version of the source ) every time it's needed. If we need to exchange a class definition, we exchange Python module or packages.
+
+## Common Python terminology
+
+Python serialization terminology focuses on the words *dump* and *load*:
+
+* ```dump(object, file)```: This method will dump the given object to a file
+* ```dump(object)```: This will dump an object and return the string representation of it
+* ```load(file)```: This will load an object from a file, returning the constructed object.
+* ```loads(string)```: This will load an object from a string representation, returning the constructed object.
+
+This is not a formal standard. The method names are not guaranteed by any ABC inheritance or mixin class definition.
+
+## Filesystem and network considerations
+
+Since the OS filesystem and the network work in bytes, we need to find a way to represent our objects in bytes. This is a two step process. The first step involves around transforming our object into a string. The second step is to use the Python ```str``` class to encode the string for us. Most serialization methods focus on creating strings.
+
+When we look at the OS filesystems, we can see two types of devices: ```block-mode``` and ```character-mode``` devices. *Block-mode* devices are also called *seekable* because the OS supports a seek operation that can access any byte in the file in an arbitrary order. Character-mode devices are not seekable. They are interfaces where bytes are transmitted serially. Seeking would involve some kind of time travel to recover past bytes or see futures bytes.
+
+> This distinction between the *character* and *block* mode can have an impact on how we represent the state of a complex object or a collection of objects. The serializations we'll look at in this chapter focus on the simplest common feature set: an ordered stream of bytes. The stream of bytes can be written to either kind of device.
+
+## The problem with extending sequence classes
+
+When we extend sequence classes we might get confused with some serialization algorithms. This may wind up bypassing the extended features we put in a subclass of a sequence. Wrapping a sequence or inventing a new one is usually a better idea than extending it.
+
+## Dumping and loading with JSON
+
+**JSON ( JavaScript Object Notation )** is a wiedely use data-interchange format. It is used by a lot of programming languages ( especially JavaScript ) and it even has databases that run only on JSON data ( *CouchDB* for example ). JSON documents are easy to read and easy to edit manually.
+
+The ```json``` module works with built-in Python types. It doesn't work directly with classes if we don't help it a little. Here is a table that illustrates JSON/JavaScript types mapped to Python types:
+
+|Python type|JSON|
+|-----------|----|
+|```dict```|```object```|
+|```list, tuple```|```array```|
+|```str```|```string```|
+|```int, float```|```number```|
+|```True```|```true```|
+|```False```|```false```|
+|```None```|```null```|
+
+**Values that are not on the python column that you want to save in JSON format must be coerced to one of the available JSON/JavaScript types. This is often done via extension functions that we can plug into the ```dump()``` and ```load()``` functions.**
+
+### Supporting JSON in our classes
+
+In order to support creating strings in JSON we need encoders and decoders for classes outside the types that can be converted automatically ( see table above ).
+***In order to encode a unique object into JSON we need to provide a function that will reduce our objects to Python primitive types that can be easily converted to JSON. The ```json``` module calls this a default function; it provides a default encoding for an object of an unknown class.***
+
+In order to decode strings in JSON and create Python objects of an application class, a class outside the baseline types supported by JSON, we need to provide an extra function. 
+***This function will transform a dictionary of Python primitive values into an instance of the one of our application classes. This is called the object hook function; it's used to transform ```dict``` into an object of a customized class.***
+
+The ```json``` module documentation suggests that we should make use of class hinting. Their suggestiong is to encode an instance of a customized class as a dictionary:
+
+```{"__jsonclass__": ["ClassName", [param1, ...]]}```
+
+The value associated with ```__jsonclass__``` is a list of two items: the class name, and a list of arguments required to create and instance of that class.
+
+> In order to decode an object from a JSON dictionary, an object hook function can look for the ```__jsonclass__``` key as a hint that one of our classes needs sto be built, not a built-in Python object. The class name can be mapped to a class object and the argument sequence can be used to build the instance.
+
+### Customizing JSON encoding
+
+For class hinting we will provide three pieces of information. 
+We will have a ```__class__``` key that will include the name of the class.
+We will have an ```__args__``` key that will store all the positional arguments.
+We will have a ```__kwargs__``` key that will store all the keyword arguments.
+
+Let's take a look at the following example. We have a class ```Post``` that looks like this:
+
+```Python
+from dataclasses import dataclass
+import datetime
+from typing import Dict, Any, List
+
+
+@dataclass
+class Post:
+    date: datetime.datetime
+    title: str
+    rst_text: str
+    tags: List[str]
+
+    def as_dict(self) -> Dict[str, Any]:
+        return dict(
+            date=str(self.date),
+            title=self.title,
+            underline="-" * len(self.title),
+            rst_text=self.rst_text,
+            tag_text=" ".join(self.tags),
+        )
+```
+
+We also have a class ```Blog``` that extends from ```list``` and looks like this:
+
+```Python
+from typing import DefaultDict, List, Dict, Any, Optional
+from Post import Post
+from collections import defaultdict
+
+
+class Blog(list):
+    def __init__(self, title: str, posts: Optional[List[Post]] = None) -> None:
+        self.title = title
+        super().__init__(posts if posts is not None else [])
+
+    def as_dict(self) -> Dict[str, Any]:
+        return dict(title=self.title, entries=[p.as_dict() for p in self])
+```
+
+An encode for the ```Blog``` object would look like this:
+
+```Python
+def blog_encode(object: Any) -> Dict[str, Any]:
+    if isinstance(object, datetime.datetime):
+        return dict(
+            __class__="datetime.datetime",
+            __args__=[],
+            __kw__=dict(
+                year=object.year,
+                month=object.month,
+                day=object.day,
+                hour=object.hour,
+                minute=object.minute,
+                second=object.second,
+            ),
+        )
+    elif isinstance(object, Post):
+        return dict(
+            __class__="Post",
+            __args__=[],
+            __kw__=dict(
+                date=object.date,
+                title=object.title,
+                rst_text=object.rst_text,
+                tags=object.tags,
+            ),
+        )
+    elif isinstance(object, Blog):
+        return dict(
+            __class__="Blog", __args__=[object.title, object.entries], __kw__={}
+        )
+    else:
+        return object
+```
+
+This function shows us two different flavors of object encodings for the three classes:
+
+* We encoded a ```datetime.datetime``` object as a dictionary of individual fields using keyword arguments.
+* We encoded a ```Post``` instance as a dictionary of individual fields, also using keyword arguments.
+* We encoded a ```Blog``` instance as a sequence of title and post entries using a sequence of positional arguments.
+
+The ```else``` statement returns the raw object. This object will be encoded by the ```json```'s module default encoding. This could be for example primitive values. If values are given that are not primitive and can't be encoded by the default encoder, an exception will be thrown.
+
+We can now use this function in order to encode as follows:
+
+```Python
+import datetime
+import json
+
+travel = Blog("Travel")
+travel.append(
+    Post(
+        date=datetime.datetime(2013, 11, 14, 17, 25),
+        title="Test Title 1",
+        rst_text="""some text""",
+        tags=["#test", "#this_is_a_tag"],
+    )
+)
+travel.append(
+    Post(
+        date=datetime.datetime(2013, 11, 18, 15, 30),
+        title="Test Title 2",
+        rst_text="""some text 2""",
+        tags=["#test2", "#this_is_a_tag_2"],
+    )
+)
+
+text = json.dumps(travel, indent=4, default=blog_encode)
+print(text)
+```
+
+Our json string will now be successfully encoded and will look like this:
+
+```JSON
+[
+    {
+        "__class__": "Post",
+        "__args__": [],
+        "__kw__": {
+            "date": {
+                "__class__": "datetime.datetime",
+                "__args__": [],
+                "__kw__": {
+                    "year": 2013,
+                    "month": 11,
+                    "day": 14,
+                    "hour": 17,
+                    "minute": 25,
+                    "second": 0
+                }
+            },
+            "title": "Test Title 1",
+            "rst_text": "some text",
+            "tags": [
+                "#test",
+                "#this_is_a_tag"
+            ]
+        }
+    },
+    {
+        "__class__": "Post",
+        "__args__": [],
+        "__kw__": {
+            "date": {
+                "__class__": "datetime.datetime",
+                "__args__": [],
+                "__kw__": {
+                    "year": 2013,
+                    "month": 11,
+                    "day": 18,
+                    "hour": 15,
+                    "minute": 30,
+                    "second": 0
+                }
+            },
+            "title": "Test Title 2",
+            "rst_text": "some text 2",
+            "tags": [
+                "#test2",
+                "#this_is_a_tag_2"
+            ]
+        }
+    }
+]
+```
+
+### Customizing JSON decoding
