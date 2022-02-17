@@ -2388,7 +2388,7 @@ def blog_encode(object: Any) -> Dict[str, Any]:
         return dict(
             __class__="Post",
             __args__=[],
-            __kw__=dict(
+            __kwargs__=dict(
                 date=object.date,
                 title=object.title,
                 rst_text=object.rst_text,
@@ -2397,7 +2397,7 @@ def blog_encode(object: Any) -> Dict[str, Any]:
         )
     elif isinstance(object, Blog):
         return dict(
-            __class__="Blog", __args__=[object.title, object.entries], __kw__={}
+            __class__="Blog", __args__=[object.title, object.posts], __kwargs__={}
         )
     else:
         return object
@@ -2446,7 +2446,7 @@ Our json string will now be successfully encoded and will look like this:
     {
         "__class__": "Post",
         "__args__": [],
-        "__kw__": {
+        "__kwargs__": {
             "date": {
                 "__class__": "datetime.datetime",
                 "__args__": [],
@@ -2470,7 +2470,7 @@ Our json string will now be successfully encoded and will look like this:
     {
         "__class__": "Post",
         "__args__": [],
-        "__kw__": {
+        "__kwargs__": {
             "date": {
                 "__class__": "datetime.datetime",
                 "__args__": [],
@@ -2495,3 +2495,327 @@ Our json string will now be successfully encoded and will look like this:
 ```
 
 ### Customizing JSON decoding
+
+In order to decode objects from a string into JSON notation we need to workt within the structure of a JSON parsing.
+
+Objects were encoded in ```dict```s. That means that every ```dict``` decoded by the JSON decoder *could* be one of our customized classes.
+
+> The JSON decode *object hook* is a function that's invoked for each ```dict``` to see whether it represents a customized object. If ```dict``` isn't recognized by the ```hook``` function, it's an ordinary dictionary and shoul be returned without modification.
+
+Here is how our object hook function will look like:
+
+```Python
+def blog_decode(some_dict: Dict[str, Any]) -> Dict[str, Any]:
+    if set(some_dict.keys()) == {"__class__", "__args__", "__kwargs__"}:
+        class_ = eval(some_dict["__class__"])
+        return class_(*some_dict["__args__"], **some_dict["__kwargs__"])
+    else:
+        return some_dict
+
+
+blog_data = json.loads(text, object_hook=blog_decode)
+print(blog_data)
+```
+
+This will decode a string, encoded in the JSON notation, using our object hook function in order to transform ```dict``` into proper ```Blog``` and ```Post``` objects.
+
+The output will be:
+
+```Python
+{'__class__': 'datetime.datetime', '__args__': [], '__kwargs__': {'year': 2013, 'month': 11, 'day': 14, 'hour': 17, 'minute': 25, 'second': 0}}
+
+{'__class__': 'Post', '__args__': [], '__kwargs__': {'date': datetime.datetime(2013, 11, 14, 17, 25), 'title': 'Test Title 1', 'rst_text': 'some text', 'tags': ['#test', '#this_is_a_tag']}}
+
+{'__class__': 'datetime.datetime', '__args__': [], '__kwargs__': {'year': 2013, 'month': 11, 'day': 18, 'hour': 15, 'minute': 30, 'second': 0}}
+
+{'__class__': 'Post', '__args__': [], '__kwargs__': {'date': datetime.datetime(2013, 11, 18, 15, 30), 'title': 'Test Title 2', 'rst_text': 'some text 2', 'tags': ['#test2', '#this_is_a_tag_2']}}
+
+[Post(date=datetime.datetime(2013, 11, 14, 17, 25), title='Test Title 1', rst_text='some text', tags=['#test', '#this_is_a_tag']), Post(date=datetime.datetime(2013, 11, 18, 15, 30), title='Test Title 2', rst_text='some text 2', tags=['#test2', '#this_is_a_tag_2'])]
+
+```
+
+## Refactoring the encode function
+
+Look at our encoding function that are a lot of things that we could improve when it comes to reusability, maintainability and the design and structure of our code. ***The encoding function shouldn't expose information on the classes being converted into JSON.*** In order to keep each class properly encapsulated it's better if we would have a way of getting our JSON encoding from a specific class, from that particular class, rather than from the *default* function needed to encode those classes.
+
+In that case, we can make a getter for every class that we want to encode that just returns the encoded version of the instance at hand.
+
+Example for the ```Blog``` class:
+
+```Python
+class Blog(list):
+    def __init__(self, title: str, posts: Optional[List[Post]] = None) -> None:
+        self.title = title
+        super().__init__(posts if posts is not None else [])
+
+    def as_dict(self) -> Dict[str, Any]:
+        return dict(title=self.title, posts=[p.as_dict() for p in self])
+
+    @property
+    def _json(self) -> Dict[str, Any]:
+        return dict(
+            __class__ = self.__class__.__name__,
+            __kwargs__ = {},
+            __args__ = [self.title, self.posts]
+        )
+```
+
+We have added a property to our class now that returns a dictionary that will be needed for encoding instance of this class. It returns, just like in our previous encoding function, a dictionary with the class name, the args and the kwargs.
+
+Here is our refactored ```Post``` class:
+
+```Python
+@dataclass
+class Post:
+    date: datetime.datetime
+    title: str
+    rst_text: str
+    tags: List[str]
+
+    def as_dict(self) -> Dict[str, Any]:
+        return dict(
+            date=str(self.date),
+            title=self.title,
+            underline="-" * len(self.title),
+            rst_text=self.rst_text,
+            tag_text=" ".join(self.tags),
+        )
+
+    @property
+    def _json(self) -> Dict[str, Any]:
+        return dict(
+            __class__ = self.__class__.__name__,
+            __kwargs__ = dict(
+                date = self.date,
+                title = self.title,
+                rst_text = self.rst_text,
+                tags = self.tags
+            ),
+            __args__ = []
+        )
+```
+
+Now that we have refactored those classes and have made it self to encode them, we can now refactor our *default* function:
+
+```Python
+def blog_encode(obj: Union[Blog, Post, Any]) -> Dict[str, Any]:
+    if isinstance(obj, datetime.datetime):
+        return dict(
+            __class__ = "datetime.datetime",
+            __args__ = [],
+            __kwargs__ = dict(
+                year=obj.year,
+                month=obj.month,
+                day=obj.day,
+                hour=obj.hour,
+                minute=obj.minute,
+                second=obj.second,
+            )
+        )
+    else:
+        try:
+            encoding = obj._json
+        except AttributeError:
+            encoding = json.JSONEncoder().default(obj)
+
+        return encoding
+```
+
+In this refactored *default* function we first check to see if the object that we are trying to encode is a ```datetime.datetime``` object since we didn't want to extend this type of class and add a json encoder getter to it, so we will do it manually because there are also no security risks. There is no point in encapsulating this class. The next things that we encode are the objects that have a json getter encoder to them, which in our case is an object that has the ```._json``` property. If that is not the case for the object then we will encode it using the default encoder.
+
+### Writing/Loading JSON to/from a file
+
+When it comes to writing/loading json to/from a file it is very easy. You just use the common terminology and methods that we have used up to this point.
+
+Here is an example of how to dump and load json:
+
+```Python
+# DUMP
+
+with Path("temp.json").open("w", encoding="utf-8") as target:
+    json.dump(travel, target, default=blog_encode)
+```
+
+```Python
+# LOAD
+
+with Path("temp.json").open(encoding="utf-8") as source:
+    objects = json.load(source, object_hook=blog_decode)
+```
+
+## Dumping and loading with YAML
+
+The [official yaml web page](https://yaml.org) states the following about YAML:
+
+> YAML™ (rhymes with “camel”) is a human-friendly, cross language, Unicode based data serialization language designed around the common native data types of dynamic programming languages.
+
+The Python Standard Library documentation for the ```json``` module explains the following about JSON and YAML:
+
+>JSON is a subset of YAML 1.2. The JSON produced by this module's default settings is also a subset of YAML 1.0 and 1.1. This module can thus also be used as a YAML serializer.
+
+We can tehnically use the ```json``` module for YAML. The ```json``` module however cannot be used in order to decode sophisticated YAML data.
+
+There are 2 advantages when it comes to using YAML:
+
+1. YAML is a more sophisticated notation, which allows us to encode additional details about our objects.
+2. The [PyYAML](https://pyyaml.org/) implementation has a deep level of integrati on with Python that allows us to very simply create YAML encodings of Python objects. 
+
+***The drawback of YAML is that it is not as widely used as JSON.***
+
+### Working with PyYAML
+
+Once you have installed the package ( using pip ) you can start working with PyYAML. The PyYAML and ```json``` modules have a lot of things in common of course. Here is for example how you encode an object using YAML:
+
+```Python
+import yaml
+text = yaml.dump(travel)
+print(text)
+```
+
+And here is how the YAML encoding of our complex Python object looks like:
+
+```YAML
+!!python/object/new:__main__.Blog
+listitems:
+- !!python/object:__main__.Post
+  date: 2013-11-14 17:25:00
+  rst_text: some text
+  tags:
+  - '#test'
+  - '#this_is_a_tag'
+  title: Test Title 1
+- !!python/object:__main__.Post
+  date: 2013-11-18 15:30:00
+  rst_text: some text 2
+  tags:
+  - '#test2'
+  - '#this_is_a_tag_2'
+  title: Test Title 2
+state:
+  title: Travel
+```
+
+The output is very complex and we can also easily edit a YAML file in order to make changes. 
+The class names are encoded with YAML **```!!```** tags. YAML contains 11 standard tags. The ```yaml``` module includes a lot of Pyton-specific tags and five *complex* Python tags.
+
+> The Python class names are qualified by the defining module. In our case, the module happened to be a simpel script, so the class names are ```__main__.Blog``` and ```__main__.Post```. If we had imported these from another module, the class names would reflect the module that defined the classes.
+> Items in a list are shown in a block sequence form .Each item starts with a -sequence; the rest of hte items are indented with two spaces. When ```list``` or ```tuple``` is small enough, it can flow onto a single line.
+
+### Formatting YAML data on a file
+
+We have several formatting options to create a prettier YAML representation of our data. Here is a table with some of the options:
+
+|Option|Description|
+|------|-----------|
+|```explicit_start```|If ```true```, writes a ```---``` marker before each object.|
+|```explicit_end```|If ```true```, writes a ... marker after each object. We might use this or ```explicit_start``` if we're dumping a sequence of YAML documents into a single file and need to know when none ends and the next begins.|
+|```version```|Given a pair of integers ```(x, y)```, writes a ```%YAML x.y``` directive at the beginning. This should be ```version = (1, 2)```|
+|```tags```|Given a mapping, it emits a YAML ```%TAG``` directive with different tag abbreviations|
+|```canonical```|If ```true```, includes a tag on every piece of data. If ```false```, a number of ```tags``` are assumed.|
+|```indent```|If set to a number, changes the indentation used for blocks.|
+|```width```|If set to a number, changes the ```width``` at which long items are wrapped to multiple, indented lines.|
+|```allow_unicode```|If set to ```true```, permits full Unicode without escapes. Otherwise, characters outside the ASCII subset will have escapes applied.|
+|```line_break```|Uses a different line-ending characters; the default is a newline.|
+
+### Extending the YAML representation
+
+Sometimes we might want to change the way our class encoding looks like in YAML. Our representation might look better than what YAML has to offer us.
+
+The ```yaml``` module, just like the ```json``` module includes some methods/functions that help you customize your encoding/decoding of custom objects. The ```representer``` is used to create a YAML representation, including a tag and value. The ```constructor``` is used to build a Python object fro mthe given value.
+These functions are just like the *default* and *object hook* functions from the ```json``` module.
+
+Let's take a look at the following example:
+
+```Python
+from enum import Enum
+from typing import Optional, Any
+import yaml
+
+
+class Suit(str, Enum):
+    Clubs = "♣"
+    Diamonds = "♦"
+    Hearts = "♥"
+    Spades = "♠"
+
+
+class Card:
+    def __init__(
+        self,
+        rank: str,
+        suit: Suit,
+        hard: Optional[int] = None,
+        soft: Optional[int] = None,
+    ) -> None:
+        self.rank = rank
+        self.suit = suit
+        self.hard = hard
+        self.soft = soft
+
+    def __str__(self) -> str:
+        return f"{self.rank!s}{self.suit.value!s}"
+
+
+class AceCard(Card):
+    def __init__(self, rank: str, suit: Suit) -> None:
+        super().__init__(rank, suit, 1, 11)
+
+
+class FaceCard(Card):
+    def __init__(self, rank: str, suit: Suit) -> None:
+        super().__init__(rank, suit, 10, 10)
+```
+
+Here is what these objects look like after we dump them into the YAML format using the default serialization:
+
+```YAML
+!!python/object:__main__.AceCard
+hard: 1
+rank: 1
+soft: 11
+suit: !!python/object/apply:__main__.Suit
+- "\u2663"
+
+!!python/object:__main__.Card
+hard: null
+rank: 2
+soft: null
+suit: !!python/object/apply:__main__.Suit
+- "\u2666"
+
+!!python/object:__main__.FaceCard
+hard: 10
+rank: 10
+soft: 10
+suit: !!python/object/apply:__main__.Suit
+- "\u2660"
+```
+
+The representation is correct but maybe a bit too wordy. We might want to change this and make a custom serializer.
+
+As previously mentioned, we can create ```representer``` functions that customize the serialization process for us.
+Here is an example of 3 representers for our cards:
+
+```Python
+def card_representer(dumper: Any, card: Card) -> str:
+    return dumper.represent_scalar(
+        "!Card", f"{card.rank!s}{card.suit.value!s}"
+    )
+
+def acecard_representer(dumper: Any, card: Card) -> str:
+    return dumper.represent_scalar(
+        "!AceCard", f"{card.rank!s}{card.suit.value!s}"
+    )
+
+def facecard_representer(dumper: Any, card: Card) -> str:
+    return dumper.represent_scalar(
+        "!FaceCard", f"{card.rank!s}{card.suit.value!s}"
+    )
+
+yaml.add_representer(Card, card_representer)
+yaml.add_representer(AceCard, acecard_representer)
+yaml.add_representer(FaceCard, facecard_representer)
+```
+
+> We have now represented each ```Card``` instance as a short string. YAML includes a tag to show which class should be built from the string. All three classes use the same format string. This happens to match the ```__str__()``` method, leading to a potential optimization.
+
