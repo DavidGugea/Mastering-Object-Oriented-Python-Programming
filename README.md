@@ -2819,3 +2819,258 @@ yaml.add_representer(FaceCard, facecard_representer)
 
 > We have now represented each ```Card``` instance as a short string. YAML includes a tag to show which class should be built from the string. All three classes use the same format string. This happens to match the ```__str__()``` method, leading to a potential optimization.
 
+This is how the YAML representation of our cards will look now:
+
+```YAML
+!AceCard "1\u2663"
+
+!FaceCard "11\u2666"
+
+!Card "2\u2665"
+```
+
+Just like the ```json``` module we also have a function that decodes/constructs objects from parsed documents. In the ```json``` module we call this function the *object hook* function but in YAML we call it a *constructor*.
+
+Here is an example of how our constructors could look like:
+
+```Python
+def card_constructor(loader: Any, node: Any) -> Card:
+    value = loader.construct_scalar(node)
+    rank, suit = value[:-1], value[-1]
+    return Card(rank, suit)
+
+def acecard_constructor(loader: Any, node: Any) -> Card:
+    value = loader.construct_scalar(node)
+    rank, suit = value[:-1], value[-1]
+    return AceCard(rank, suit)
+
+def facecard_constructor(loader: Any, node: Any) -> Card:
+    value = loader.construct_scalar(node)
+    rank, suit = value[:-1], value[-1]
+    return FaceCard(rank, suit)
+
+yaml.add_constructor("!Card", card_constructor)
+yaml.add_constructor("!AceCard", acecard_constructor)
+yaml.add_constructor("!FaceCard", facecard_constructor)
+```
+
+Let's take a look now at how our representers and constructor have helped us:
+
+```Python
+deck = [
+    AceCard(1, Suit.Clubs),
+    FaceCard(11, Suit.Diamonds),
+    Card(2, Suit.Hearts)
+]
+text = yaml.dump(deck, allow_unicode=True)
+print(text)
+objects = yaml.load(text, Loader=yaml.Loader)
+print(objects)
+```
+
+The output:
+
+```YAML
+- !AceCard '1♣'
+- !FaceCard '11♦'
+- !Card '2♥'
+```
+
+```Python
+[<__main__.AceCard object at 0x7fafe78cce20>, <__main__.FaceCard object at 0x7fafe78cc910>, <__main__.Card object at 0x7fafe78cc850>]
+```
+
+### Security and safe loading
+
+YAML can mostly build objects of any type. This allows an attack on an application that transmits YAML files over the internet without proper SSL controls.
+
+YAML has a function called ```safe_load()``` that refuses to execute arbitrary Python code as part of building an object. This however severly limits what can be loaded.
+
+A better approach would be too use the mixin class ```yaml.YAMLObject``` for our own objects. We use this to set some class-level attributes that provide hints to ```yaml``` and ensure the safe construction of objects.
+
+You can define a class for safe transmission this way:
+
+```Python
+class Card(yaml.YAMLObject):
+    yaml_tag = "!Card"
+    yaml_loader = yaml.SafeLoader
+```
+
+> The two attributes will alert ```yaml``` that these objects can be safely loaded without executing arbitrary and unexpected Python code. Each subclass of ```Card``` only has to set the unique YAML tag that will be used.
+
+Example:
+
+
+```Python
+class AceCard(Card):
+    yaml_tag = "!AceCard"
+```
+
+> With these modification to the class definitions, we can now use ```yaml.safe_load()``` on the YAML stream without worrying about the document having malicious code inserted over an unsecured internet connection. The explicit use of the ```yaml.YAMLObject``` mixin class for our own objects coupled with setting the ```yaml_tag``` attribute has several advantages. It leads to slightly more compact files. It also leads to a better-looking YAML files--the long, generic tags are replaced with shorter tags.
+
+## Dumping and Loading using pickle
+
+The ```pickle``` module is Python's native format to make objects persistent.
+The Python Standard Library says this about ```pickle```:
+
+> The pickle module can transform a complex object into a byte stream and it can transform the byte stream into an object with the sam internal structure. Perhaps the most obvious thing to do with these byte stream is to write them onto a file, but it is also conceivalbe to send them across a network or store them in a database.
+
+The ```pickle``` module ***only focuses on Python***. It is not like other formats, like CSV, JSON or YAML where data is interchangeable between multiple platforms and programming languages. ***In this case, the focus is only on Python.***
+
+The ```pickle``` module is also tightly integrated with Python. We have special methods that allow us to integrate our custom classes with ```pickle``` with ease while keeping a clean class design and maintanable code. Some of these special methods are ```__reduce__()``` and ```__reduce_ex__()``` that help a class to support the ```pickle``` processing.
+
+This is how we dump and load objects with ```pickle```:
+
+```Python
+# DUMPING
+with Path("test.p").open("wb") as target:
+    pickle.dump(travel, target)
+```
+
+```Python
+# LOADING
+with Path("test.p").open("rb") as source:
+    obj = pickle.load(source)
+```
+
+The pickled data is written in bytes, that means that if we want to write or read something from a file of that type, we have to open it in binary mode. The underlying stream of bytes is not intended for human consumption.
+
+### Designing a class for reliable pickle processing
+
+***When unpickling an object, the ```__init__()``` method is completely ignored. The ```__init__()``` method is bypassed by using the ```__new__()``` method instead, where the object is created. The properties of our object are set directly in the ```__dict__``` property.***
+
+***This is a problem for when we have some processing in our ```__init__()``` method. If we want to open a GUI or start a certain process in our ```__init__()``` method, these processes won't be executed at all since the ```__init__()``` method is bypassed by the ```__new__()``` method.***
+
+A class that relies on processing during ```__init__()``` has to make special arrangements to be sure that that this initial processing will be executed properly. There are two things that we can do:
+
+* Avoid eager startup processing in ```__init__()```. Instead, do only the minimal initialization processing. For example, if there are external file operations, these should be deferred until required. If there are any eager summarization computations, they must be redesigned to be done lazily. Similarly, any initialization logging will not be executed properly.
+* Define the ```__getstate__()``` and ```__setstate__()``` methods that can be used by ```pickle``` to preservet hte state and restore the state. The ```__setstate__()``` method can then invoke the same method that ```__init__()``` invokes to perform a one-time initialization processing in ordinary Python code.
+
+
+***When we pickle an object, we pickle it at a certain state. Let's say that we have an object that contains the properties ```a``` and ```b``` and we have ```object.a = 1``` and ```object.b = 2```. When we pickle this object, we pickle it at that specific state, which is a state after initialization. We cannot have an object that exists at an uninitialized state. All objects are initialized. That happens through the ```__new__()``` process, which creates the object itself in memory, followed by the ```__init__()``` process which is the initialization process, which gives the object meaning, it gives the objects its arbitrary properties ( if there are any ).***
+
+***When we unpickled an object, we use the pickled information about that object in order to built a new object that is exactly like the object that we have just unpickled ( exactly how we have proceded up to this point ). When we unpickle an object however, we unpickled it at the state that it was when we've pickled it. That means that we will unpickle an initialized object. That also means that we will not go over the ```__init__()``` method. We will just build the object in memory using the ```__new__()``` method and then we will give its attributes directly using the ```__dict__``` property.***
+
+***That means that every process that we have intended to start in the initialization method will not start when unpickling since we are not re-initializing the object, since we are unpickling an object that was pickled at an already-initialized state***.
+
+Here is the documentation of ```__getstate__()``` and ```__setstate__(state)```:
+
+```object.__getstate__()``` documentation:
+> Classes can further influence how their instances are pickled; if the class defines the method ```__getstate__()```, it is called and the returned object is pickled as the contents for the instance, instead of the contents of the instance’s dictionary. If the ```__getstate__()``` method is absent, the instance’s ```__dict__``` is pickled as usual.
+
+```object.__setstate__(state)``` documentation:
+> Upon unpickling, if the class defines ```__setstate__()```, it is called with the unpickled state. In that case, there is no requirement for the state object to be a dictionary. Otherwise, the pickled state must be a dictionary and its items are assigned to the new instance’s dictionary. If ```__getstate__()``` returns a false value, the ```__setstate__()``` method will not be called upon unpickling.
+
+Here is a practical example:
+
+```Python
+import logging
+import pickle
+from typing import Dict, Any
+
+logger = logging.Logger(__name__)
+stream_handler = logging.StreamHandler()
+logger.addHandler(stream_handler)
+logger.setLevel(logging.DEBUG)
+
+
+class TestClass:
+    def __init__(self, a: int, b: int) -> None:
+        self.a = a
+        self.b = b
+
+        self.sum = self.a + self.b
+        logger.debug("Initialization log.")
+
+    def __getstate__(self) -> Dict[str, Any]:
+        return vars(self)
+
+    def __setstate__(self, state: Dict[str, Any]) -> None:
+        # Update the dict of our object since it's empty and we are updating it with the state of the unpickled object
+        self.__dict__.update(state)
+        logger.debug("Unpickling log")
+
+
+test = TestClass(1, 2)
+pickled_test = pickle.dumps(test)
+print(pickled_test)
+unpickled_test = pickle.loads(pickled_test)
+print(unpickled_test)
+print(unpickled_test.a)
+```
+
+> The ```__getstate__()``` method is used while pickling to gather the current state of hte object. This method can return anything. In the case of objects that have internal memoization caches, for example, the cache might not be pickled in order to save time and space. This implementation uses the internal ```__dict__``` without any modification.
+> The ```__setstate__(state)``` method is used while unpickling to reset the value of the object. This version merge the state into the internal ```__dict__``` and then writes the appropriate logging entries.
+
+### Security and the global issue
+
+> During unpickling, a global name in the pickle stream can lead to the evaluation of arbitrary code. Generally, the global names inserted into the bytes are class names or a function name. However, it's possible to include a global name that is a function in a module such as ```os``` or ```subprocess```. This allows an attack on an application that attempts to transmit pickled objects through the internet without strong SSL controls in place.
+
+In order to prevent the execution of arbitrary code we must extend the ```pickle.Unpickler``` class. We'll override the ```find_class()``` method to replace it with something more secure. We have to account for several unpickling issues, such as the following:
+
+* We have to prevent the use of the built-in ```exec()``` and ```eval()``` functions.
+* We have to prevent the use of modules and packages that might be considered unsafe. For example, ```sys``` and ```os``` should be prohibited.
+* We have to permit the use of our application modules.
+
+Here is an example that imposes some restrictions on our unpickled data:
+
+```Python
+import builtins
+import pickle
+from typing import Any
+
+
+class RestrictedUnpickler(pickle.Unpickler):
+    def find_class(self, module: str, name: str) -> Any:
+        if module == "builtins":
+            if name not in ("exec", "eval"):
+                return getattr(builtins, name)
+        elif module in ("__main__", "my_personal_modules"):
+            # Valid module names depends on execution context
+            return globals()[name]
+        raise pickle.UnpicklingError(
+            f"global '{module}.{name}' is forbidden"
+        )
+```
+
+## Dumping and loading with CSV
+
+CSV files are not really a complete persistene solution to python objects. The encode and decode ***very***  simple ```list``` or ```dict``` instances into CSV notation.
+
+Working with CSV files means that you have to do a lot of manual mapping between very complex python objects and very simple CSV files. We must always remain cognizant of the limitations of CSV files.
+
+CSV data only contains pure text. There is on such thing as data types or data structures. It is only pure text. This makes it ***extremly*** difficult to establish a powerful and maintainable connection between complex python objects and the CSV notation. CSV files are also often touched manually and can easily become incompatible because of human tweaks.
+
+> When we have relatively simple class definitions, we can often transofrm each instance into a simple, flat row of data values. Often, ```NamedTuple``` is a good match between a CSv source file and Python objects. Going the other way, we might need to design our Python classes around ```NamedTuple``` if our application will save data in the CSV notation.
+
+### Dumping simple sequences to CSV.
+
+An ideal mapping, as previously mentioned, is between ```NamedTuple``` instances and rows in a CSV file. Each row represents a different ```NamedTuple```.
+
+An example:
+
+```Python
+from typing import NamedTuple
+
+class GameStat(NamedTuple):
+    player: str
+    bet: str
+    round: int
+    final: float
+```
+
+You can now use the CSV ```DictWriter``` from the ```csv``` module in order to write this to a CSV file.
+
+## Dumping and loading with XML
+
+XML, just like JSON is not a complete persistence solution for Python objects. The ```xml``` package includes numerous modules that help you work with XML, including a **Document Object Model ( DOM )** that works just like the DOM in HTML.
+
+Working with XML objects, just like working with CSV objects involves a manual mapping between python objects and xml structures. We need to remain mindful of XML's constraints. The content of an XML attribute or tag is pure text. When loading XML content, we need to manually convert all the values into useful types in our application. We might have attributes or tags that indicate the expected type.
+
+When we look at dumping a  Python object to create an XML document, there are three common ways to build the text:
+
+* **Include XML output methods in our class design.** In this case, our classes emit strings that can be assembled into an XML document. This conflates serialization into the class in a potentially brittle design.
+* **Use ```xml.etree.ElementTree``` to build the ```ElementTree``` ndoes and return this structure: This can be then rendered as text. This is somewhat less brittle because it builds an abstract document object model rather than text.
+* **Use an external template and fill attributes into that template**: Unless we have a sophisticated template tool, this doesn't work out well. The ```string.Template``` class in the standard library is only suitable for very simple objects. More generally, Jinja2 or Mako should be used. 
+
+> There are some projects that include generic Python XML serializers. The problem with trying to create a generic serializers is that XML is extremly flexible; each application of XML seems to have unique **XML Schema Definition ( XSD )** or **Document Type Definition ( DTD )**.
