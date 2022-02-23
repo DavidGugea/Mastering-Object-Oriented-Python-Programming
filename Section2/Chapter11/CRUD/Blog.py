@@ -17,7 +17,7 @@ class Blog:
         self.underline = "=" * len(self.title)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import shelve
     from pathlib import Path
 
@@ -26,13 +26,13 @@ if __name__ == '__main__':
         date=datetime.datetime(2013, 11, 14, 17, 25),
         title="Test Title",
         rst_text="""Rst Text Test""",
-        tags=("tag1", "tag2", "tag3")
+        tags=("tag1", "tag2", "tag3"),
     )
     p2 = Post(
         date=datetime.datetime(2013, 11, 18, 15, 30),
         title="Test Title",
         rst_text="""Rst Text Test""",
-        tags=("tag1", "tag2", "tag3")
+        tags=("tag1", "tag2", "tag3"),
     )
 
     shelf = shelve.open(str(Path.cwd() / "data" / "Blog.dat"))

@@ -13,8 +13,8 @@ class Post:
     tag_text: str = field(init=False)
 
     # Part of the persistence, not essential to the class.
-    _id: str = field(default='', init=False, repr=False, compare=False)
-    _blog_id: str = field(default='', init=False, repr=False, compare=False)
+    _id: str = field(default="", init=False, repr=False, compare=False)
+    _blog_id: str = field(default="", init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         self.underline = "-" * len(self.title)
