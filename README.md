@@ -3074,3 +3074,469 @@ When we look at dumping a  Python object to create an XML document, there are th
 * **Use an external template and fill attributes into that template**: Unless we have a sophisticated template tool, this doesn't work out well. The ```string.Template``` class in the standard library is only suitable for very simple objects. More generally, Jinja2 or Mako should be used. 
 
 > There are some projects that include generic Python XML serializers. The problem with trying to create a generic serializers is that XML is extremly flexible; each application of XML seems to have unique **XML Schema Definition ( XSD )** or **Document Type Definition ( DTD )**.
+
+# 11. Storing and Retrieving Objects via Shelve
+
+## CRUD operations and multi-tier architecture
+
+Applications that contain persistent objects may demonstrate four cases, summarized as **CRUD operations**: *create*, *retrieve*, *update* and *delete*. The idea is that any of these operations can be applied to any object in the domain; this leads to the need for a more sophisticated persistence mechanism than a monolithic load or dump.
+
+When using more sophisticated storage this always leads to the allocation of reponsability in our application. There are certain higher-level design patterns that help us with that, one of them being the **multi-tier architecture*:
+
+* **Presentation layer**: This includes web browsers, GUIs for a locally-installed application.
+* **Application layer**: This layer is often based on a web-server but it can also be a portion of a locally-installed software. The application layer can be usefully subdivided into a processing layer and a data model layer. The processing layer involves the classesa and functions that embody an application's behavior. The data model layer defines the problem domain's object model.
+* **Data layer**: This can be further subdivided into an access layer and a persistence layer. The access layer provides uniform access to persistent objects. The persistence layer serializes objects and writes them to the persistent storage. The is where the more sophisticated storage techniques are implemented
+
+Since each of these layers can be subdivided into multiple layers themselves there are a number of variations of this architecture. It can also be called a three-tier architecture. It can also be called an **n-tier architecture** if you want to build more layers.
+
+The data layer can use modules that help with persistence such as ***```shelve```***. This module defines a mapping-like container in which we can store objects. Each stored object is written and pickled to a file. We can also unpickle and retrieve any object from the file.
+
+## Analyzing persistent object use cases.
+
+When we a large problem domain where with many persistent, independent and mutable objects we have to introduce some more depth to the use cases:
+
+* **We might not want to load all the objects into our memoy**. When it comes to *big data* it might also be impossible to do so.
+* **We may only update a small subset of objects from our problem domain**. Loading and then dumping all the persistent objects in order to update only one single object can become highly inefficient.
+* **We may not be dumping all the objects at one time; we may be accumulating objects incrementally.** Some format,s such as YAML and CSV, allow us to append themselves to a file with little complexity. Other formats, such as JSON and XML, have terminators that make it difficult to simply append to a file. 
+
+It is common to look at serialization, transactional consistentcy, as well as concurrent write access and put them all in the concept of *database*. The ```shelve``` module is not a comprehensive database solution by itself.
+
+## The ACID properties
+
+The design of our application must consider the implication of the **ACID properties** to our ```shelve``` database.
+
+An application often makes chnages in bundles of related operations. This bundle of operations **must** change the database **from one consistent state to the next consistent state**. The intent of these bundles is to ensure that the database is protected from an unconsistent state.
+
+The ACID properties characterize how we want the database transactions to behave as a whole:
+
+* **Atomicity**: A transaction must be atomic. If there are multiple operations within a transaction, either all the operations should be completed or none of them should be completed. It should never be possible to view a pratially completed transaction.
+* **Consistency**: A transaction must assure consistency of the overall database. It must change the database from one valid state to another. A transaction should not corrupt the database or create inconsistent views among concurrent users. All users see the same net effect of completed transactions.
+* **Isolation**: Each transaction should operate as if it processed in complete isolation from all other transactions. We can't have two concurrent users interfering with each other's attempted updated. We should always be able to transform concurrent access into (possible slower) serial access and the database updated will produce the same results. Locks are often used to achieve this.
+* **Durability**: The changes to the database should persist properly in the filesystem.
+
+## Creating a shelf
+
+In order to create a shelf using the ```shelve``` module you first must open a persisten shelf structure using ```shelve.open()```. The second step would be to close the file properly so that all changes will be written to the underlying filesystem.
+
+The ```shelve.open()``` function requries two parameters. The first paremeter is the filename and the second one is the file access mode. The default access mode is ```c``` which stand for opening an existing shelf or creating a new one if it doesn't exist. The alternative shelve access modes are:
+
+* ```r``` is a read-only shelf.
+* ```w``` is a read-wrtie shelf that *must* exist or an exception will be thrown.
+* ```n``` is a new, empty shelf; any previous versions will be overwritten.
+
+It is absolutely necessary to ensure that a shelf has been closed properly in order to make sure that the objects have been saved to a persistent disk. The shelf is not a contest manager itself but you can use the ```contextlib.closing()``` function in order to ensure the properer closing of a shelf.
+
+This is what working with a shelf would look like:
+
+```Python
+import shelve
+from contexltib import closing
+from pathlib import Path
+
+db_path = Path.cwd() / "data" / "database.db"
+with closing(shelve.open(str(db_path))) as shelf:
+    process(shelf)
+```
+
+We have opened a shelf and have provided the open shelf to some process that does the real work of our application. When this process is finished or if the process throws an exception, the context manager will ensure that the shelf will be closed properly.
+
+## Designing keys for our objects.
+
+The ```shelve``` and ```dbm``` modules provide immediate access to the objects that they store. This is done using a mapping-like structure. The ```shelve``` module stores its objects into a dictionary-like structure. It contains keys based on which you can retrieve your serialized objects and the objects are stored as values. The shelf mapping exists on persistent storage so that means that the objects that you are storing on a shelf will be immediately serialized and saved.
+
+We must identify a shelf object with a unique key. Strings are very common data types used for keys. In our problem domain we can usually find a key that we can apply to an object. The key must be unique since a key can only point towards one object. This influences our class design since we must think about integrating those keys to our problem domain. In most cases we can add those keys as attributes to our objects. In the case where an object has its own key, we can add it on the shelf much easily using something like this: ```shelf[object.key] = object```. This is the simplest case and it also sets the pattern for more complex cases.
+
+When our application doesn't find an appropriate key for an object we must build a so called *surrogate key*. That happens when we can't find a unique value from our object that can persist in time and that is unique. That value must be unique and is not allowed to change. This is when we must build a made-up value for our object so we can store it. It's just like a primary key in databases.
+
+Objects might have certain candidates for primary keys. If an object has for example a ```datetime``` value we could use that as a primary key but that is not always the case where that is a valid value to use as a primary key. If an object has for example a ```datetime``` value we could use that as a primary key but that is not always the case where that is a valid value to use as a primary key
+
+There is also the possibility of combining multiple values of our object in order to create a primary key. That would be called a **composite key**. This idea is however not valid in all problem domains since the key wouldn't be atomic anymore and any changes in the object's attributes that were used in order to build the composite key would lead to data update problems.
+
+The simplest and most reliable way of building a key for a problem domain where the key can be unique and consistent and wouldn't lead to any data update problems would be to build a **surrogate key**. This key wouldn't have to depend on the data of the object, it would just be added to the object as a new attribute.
+
+The string representation of such objects with *surrogate keys* when adding them to a shelf could follow the following design: ```class_name:oid``` ( where ```oid``` is object id; the surrogate key in case ). We should keep the ```class_name``` in our shelf key even if we only want to keep objects of certain types in persistent states just to ensure maintainability and to save a namespace for indexes and administrative metadata.
+
+When adding an object to a shelf, it would look like this:
+
+```shelf[f"{object.__class__.__name__}:{object.key}"] = object```
+
+## Generating surrogate keys for objects
+
+One way of generating surrogate keys is using an integer counter. In order to keep track of it, we can store the counter in our database along with the other objects.
+Python has a method called ```id()``` that returns an integer that represents the address in memory of a certain object. That id however should never be used as an integer counter since it doesn't have any guarantees of any kind.
+
+Since we are going to add some administrative object to our shelf we must give these objects some unique keys with a distinctive prefix in order to properly differentiate them from the other objects that we want to store. 
+In our case we can use something like ```_DB```. This will be a class name used for all administrative objects. 
+Administrative objects are objects that help us keep track of certain things in our database ( for example the index counter ) or objects in general that helps us administrate the objects that we store on the shelves.
+
+We need to choose the granularity of storage:
+
+* **Coarse-grained:** We can create a single ```dict``` object with all of the administrative overheads for surrogate key generattions. A single key, such as ```_DB:max```, can identify this object. Within this ``dict```, we could map class names to the maximum identifier values used. Every time we create a new object, we assign the ID from this mapping and then also replace the mapping in the shelf.
+* **Fine-grained:** We can add many items to the database, each of which as the maximu key value for a different class of objects. Each of these additional key items has the form of ```_DB:max:class```. The value for each of these keys is just an integer, the largest sequential identifier assigned so far for a given class.
+
+So, summarized, what we want to do is to store the surrogate key in our database in an administrative object that has the prefix key ```_DB```. Now, we have to options. We can either store a general surrogate key that will be used for all types of objects that we will store in our shelve which would be **coarse-grained storage**. The second option would be to store a surrogate key for each type of object that we are going to store in our database, that would be **fine-grained storage**.
+
+## Designing a class with a simple key
+
+It is very helpful to store the key for an object inside the object. That would it very easy to delete or replace the object inside the shelf.
+
+When it comes to retrieving objects there are two use cases. The first use case is when we want to retrieve an object based on a certain key. The second use case is when we want to retrieve an object based on same values of its attributes, in which case we want have to get the keys of these objects through queries.
+
+For every class that we create we can an attribute ```_id``` that will store the surrogate key for that object. 
+
+Here is an example of how we can build a ```Blog``` class:
+
+```Python
+from dataclasses import dataclass, field
+from Post import Post
+from typing import List
+
+
+@dataclass
+class Blog:
+    title: str
+    entries: List[Post] = field(default_factory = list)
+    underline: str = field(init=False, compare=False)
+
+    # Part of the persistence, not essential to the class.
+    _id: str = field(default="", init=False, compare=False)
+
+    def __post_init__(self) -> None:
+        self.underline = "=" * len(self.title)
+```
+
+This is how we could store this object on a shelf:
+
+```Python
+import shelve
+from pathlib import Path
+
+# Create the object
+blog_object = Blog(title="Blog Title")
+
+# Open the shelf 
+path = str(Path.cwd() / "data" / "database.db")
+shelf = shelve.open(path)
+
+# Add a surrogate key to the object that we want to store
+blog_object._id = "Blog:1"
+
+# Save the object using the following format -> { shelf[object.key] = object }
+shelf[blog_object._id] = blog_object
+```
+
+We have first opened the a shelf on a database ( i have chosen a sqlite database ). After opening the database, we have added the surrogate key to our object using the formatting that we've previously talked about and then we have saved the object to the shelf using the surrogate key.
+
+We can also fetch the object from the shelf using the same exact surrogate key:
+
+```Python
+blog_saved = shelf["Blog:1"]
+print(blog_saved.title) # Blog Title
+shelf.close()
+```
+
+## Designing classes for containers or collections.
+
+When it comes to storing complex objects like containers which are objects that contain other objects inside of them there are a couple of design strategies that we have to take a look at.
+When we have a complex object, such as ```Blog```, we can persist the entire container as a single, complex object on our shelf. Storing large containers involves coarse-grained storage. If we change a contained object, the entire container must be serialized and stored since the container itself has been changed. 
+
+## Referring to objects via foreign keys.
+
+We have already talked about adding primary keys to our objects. When we have child objects that refer to parent object we have additional design decisions to make. One of the most important design decisions is thinking about how we will structure the primary keys of child objects. There are two common strategies for child keys:
+
+* ***```"Child:cid"```:*** **We can use this when we have children taht can exist independently of an owning parent.** For example, an item on an invoice refers to a product; the product can exist even if there's no invoice item for the product.
+* ***```"Parent:pid:Child:cid"```:*** **We can use this when the child cannote xist without a parent.** A customer address doesn't exist whtout a customer to contain the address in the first place. When the children are entirely dependent on the parent, the child's key can contain the owning parent's ID to reflect this depedency.
+
+In our example with the ```Blog``` and ```Post``` class, a ```Post``` cannot exist without a ```Blog```, therefore we will have to implement the second design option. This is how a post would look like:
+
+```Python
+@dataclass
+class Post:
+    date: datetime.datetime
+    title: str
+    rst_text: str
+    tags: List[str]
+    underline: str = field(init=False)
+    tag_text: str = field(init=False)
+
+    # Part of the persistence, not essential for the class
+    _id: str = field(default='', init=False, repr=False, compare=False)
+    _blog_id: str = field(default='', init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        self.underline = "-" * len(self.title)
+        self.tag_text = " ".join(self.tags)
+```
+
+This is how we would post objects to our shelf:
+
+```Python
+import shelve
+from pathlib import Path
+
+# Create the objects
+first_post_object = Post(
+    date = datetime.datetime(2013, 11, 14, 17, 25),
+    title = "First Post Object Title",
+    rst_text = """Rst Text""",
+    tags = ("Tag1", "Tag2", "Tag3", "Tag4", "Tag5")
+)
+second_post_object = Post(
+    date = datetime.datetime(2013, 11, 18, 15, 30),
+    title = "Second Post Object Title",
+    rst_text = """Rst Text""",
+    tags = ("Tag1", "Tag2", "Tag3", "Tag4", "Tag5")
+)
+
+# Create the path to the database
+path = str(Path.cwd() / "data" / "database.db")
+
+# Open the shelf
+shelf = shelve.open(path)
+
+# Get the blog object
+blog = shelf["Blog:1"]
+
+# Assign the blog's primary key to the foreign key of the post so that we know to which blog the post belongs to
+first_post_object._blog_id = blog._id
+first_post_object._id = first_post_object._blog_id + ":Post:1"
+shelf[first_post_object._id] = first_post_object
+
+second_post_object._blog_id = blog._id
+second_post_object._id = second_post_object._blog_id + ":Post:2"
+shelf[second_post_object._id] = second_post_object
+
+print(list(shelf.keys())) # ['Blog:1', 'Blog:1:Post:1', 'Blog:1:Post:2']
+print(first_post_object._id) # 'Blog:1:Post:1'
+print(first_post_object._blog_id) # 'Blog:1'
+```
+
+We have first created the post objects and then opened the shelf in order to get the blog object.
+We have then assigned the blog object's primary key to the foreing key, which in our case is the blog id, to our posts. We have then saved the posts using their complete id which consisted of their post id and their foreign key ( the blog id ).
+
+## Designing CRUD operations for complex objects
+
+When we decompose collections into a number of independent objects we will have multiple classes of objects on the shelves. This leads of coures to a fine-grained designed storage. This also leads to seperate sets of CRUD operations for each class. In some cases, since the objects are independet, we can execute CRUD operations independently on certain objects without worrying about them having any impact on any other objects. 
+In some relational databases, we have the so called *cascading* effect where if you delete for example the ```Blog``` object, all the other ```Post``` objects that were related to that ```Blog``` object will be deleted as well.
+
+In our example, the ```Blog``` and the ```Post``` object have a relationship. The child object, ```Post``` can't exist without the parent object ```Blog```. When it comes to CRUD operations, this leads to the following considerations:
+
+* Consider the following CRUD operations on independent objects:
+
+    * We may create a new, empty parent, assigning a new primary key to this object. We can later assign children to this parent. Code such as ```shelf[f'parent:{object.id}'] = object``` creats a parent object in the shelf.
+    * We may update or retrieve this parent without any effect on the children. We can perform ```shelf[f'parent:${object.id}']``` on the right side of the assignment to retrieve a parent. Once we have the object, we can perform ```shelf[f'parent:${object.id}'] = object``` to persist a change
+    * Deleting the parent can lead to one of two behaviors. One choice is to cascade the deletion to include all the children that refer to the paretn. Alternatively, we may write code to prohibit the deletion of paretns that still have child references. both are sensible, and the choice is driven by the requirements imposed by the problem domain.
+
+* Consider the following CRUD operations on dependent objects:
+
+    * We may create a new child that refers to an existing parent. We must also decide what kind of keys we want to use for children and parents.
+    * We can update, retrieve, or delete the child outside the parent. This can include assigning the child to a different parent.
+
+## Searcing, scanning and querying
+
+Searching, scanning and querying are synonyms, I'll use them interchangeably. 
+Seraching can be very inefficient if we examine all the objects in a database and apply a filter on them. Working with a subset of items is a lot better.
+
+When a child class has an independent-style key, we can scan a shelf for all instances of some ```Child``` class:
+
+```Python
+children = (
+    shelf[key] for key in shelf.keys() if key.startswith("Child:")
+)   
+```
+
+When a child has a dependent-style key, we can search for the children of a specific parent using more complex matching:
+
+```Python
+children_of = (
+    shelf[key] for key in shelf.keys() if k.startswith(f"{parent}:Child:")
+) 
+```
+
+When using the hierarchical design ```Parent:pid:Child:cid``` we have to be careful when separating parents from their children. With this part of the key, we can have object with keys that look like this: ```Parent:pid``` that only represent the object but we can also have objects that look like this: ```Parent:pid:Child:cid``` that represent a certain object and its children. We have three kinds of conditions that we'll often use for these brute-force searches:
+
+* ```key.startswith(f"Parent:{pid}")```: Finds a union of parents and children; this isn't a common requirement.
+* ```key.startswith(f"Parent:{pid}:Child:")```: Finds children of the given parent.
+* ```key.startswith(f"Parent:{pid}:")``` and "```:Child:```" ```not in key```: Finds parents, excluding any children.
+
+## Designing an access layer for shelve
+
+We will look at how we can use the ```shelve``` module inside an application. We will look at parts of an application that edits and saves blog posts. 
+
+**Withing an application tier, we'll distinguish between two layers:**:
+
+* **Application processing:** Withing the application layer, objects are not persistent. **These classes will embody the behavior of the application as a whole.** These calsses respon to the user selection of commands, menu items, buttons, and other processing elements.
+* **Problem domain data model:** These are the objects that will get written to a shelf. These objects embody the state of the application as a whole.
+
+> The classes to define an independent ```Blog``` and ```Post``` will have to be modified so that we can process them separately in the shelf container. **We don't want to cdreate a single, large container object by turning ```Blog``` into a collection class.**
+
+Withing the data tier, there might be a number of features, depending on the complexity of the data storage: We'll focus on these two features:
+
+* **Access:** These components provide uniform access to the *problem domain objects*. *We'll focus on the access tier*. We'll define an ```Access``` class that provides access to the ```Blog``` and ```Post``` instances. It will also manage the keys to locate the ```Blog``` nad ```Post``` objects in the shelf.
+* **Persistence:** The components serialize and write *problem domain objevcts* to the persistent storage. **This is the ```shelve``` module**. The Access tier will depend on this.
+
+We will break the ```Acess`` class into three seperate pieces. Here's the first part, showing the file open and close operations:
+
+```Python
+import shelve
+from pathlib import Path
+from typing import cast, Dict, Iterator, Union
+from Blog import Blog
+from Post import Post
+
+
+class Access:
+    def __init__(self) -> None:
+        self.database: shelve.Shelf = cast(shelve.Shelf, None)
+        self.max: Dict[str, int] = {"Post": 0, "Blog": 0}
+
+    def new(self, path: Path) -> None:
+        self.database = shelve.Shelf = shelve.open(str(path), "n")
+        self.max: Dict[str, int] = {"Post": 0, "Blog": 0}
+
+        self.sync()
+
+    def open(self, path: Path) -> None:
+        self.database = shelve.open(str(path), "n")
+        self.max = self.database["_DB:max"]
+
+    def close(self) -> None:
+        if self.database:
+            self.database["_DB:max"] = self.max
+            self.database.close()
+
+        self.database = cast(shelve.Shelf, None)
+
+    def sync(self) -> None:
+        self.database["_DB:max"] = self.max
+        self.database.sync()
+
+    def quit(self) -> None:
+        self.close()
+```
+
+When we initialize the ```Access``` class we create two properties, the ```database``` and the ```max``` dictionary that keeps track of fine-grained index counters.
+If we choose to create a database using the ```Access.new()``` method, we will update the ```database``` property and set it to a new shelf that opens in a specific path. We will also use the ```Access.sync()``` method which syncs the database administrative class ```_DB```'s ```max``` property to our ```max``` property.
+If we choose to open a database using ```Access.open()``` then we will update the ```database``` property to be an opened shelf of that database and we will also update our ```max``` property to match the ```max``` property of the database's administrative ```_DB``` class.
+When closing the database using ```Access.close()``` we update the database's administrative ```_DB``` class ```max``` property with our ```max``` property and then we close it.
+We will add the following methods in order to create and retrieve blog and post objects and also to update an delete posts from the database:
+
+```Python
+    def create_blog(self, blog: Blog) -> Blog:
+        self.max["Blog"] += 1
+        key = f"Blog:{self.max['Blog']}"
+        blog._id = key
+
+        ###################################
+        self.database[blog._id] = blog
+        ###################################
+
+        return blog
+
+    def retrieve_blog(self, key: str) -> Blog:
+        return self.database[key]
+
+    def create_post(self, blog: Blog, post: Post) -> Post:
+        self.max["Post"] += 1
+        post_key = f"Post:{self.max['Post']}"
+        post._id = post_key
+        post._blog_id = blog._id
+
+        #################################
+        self.database[post._id] = post
+        #################################
+
+        return post
+
+    def retrieve_post(self, key: str) -> Post:
+        return self.database[key]
+
+    def update_post(self, post: Post) -> Post:
+        self.database[post._id] = post
+        return post
+
+    def delete_post(self, post: Post) -> None:
+        del self.database[post._id]
+```
+
+When creating a new blog using the ```Access.create_blog()``` method we increment the Blog's index counter inside our ```max``` property and then give it a key using the ```f"Blog:{self.max["Blog"]"}``` format. Afterwards we add the blog inside our shelf using the key.
+When creating a new post using ```Access.create_post()``` we also need the blog as an argument that the post can make a reference to. The post's counter will be incremented inside the ```max``` property. We will first add the post key using the same format that we've used with the ```Blog``` class: ```f"Post:{self.max['Post']}"``` and then we will add the blog id to the ```_blog_id``` property of the ```Post``` object. Then we will add the post to the shelf using its key.
+When retrieving ```Blog``` or ```Post``` object we will use their key and return the object from the shelf using the given key. The same concept goes for updating and deleting ```Post``` objects, we just use the given key.
+
+We can also add some iterators to our ```Access``` class:
+
+```Python
+    def __iter__(self) -> Iterator[Union[Blog, Post]]:
+        for k in self.database:
+            if k[0] == "_":
+                continue  # Skip the administrative objects
+            yield self.database[k]
+
+    def blog_iter(self) -> Iterator[Blog]:
+        for k in self.database:
+            if k.startswith("Blog:"):
+                yield self.database[k]
+
+    def post_iter(self, blog: Blog) -> Iterator[Post]:
+        for k in self.database:
+            if k.startswith("Post:"):
+                if self.database[k]._blog_id == blog._id:
+                    yield self.database[k]
+
+    def post_title_iter(self, blog: Blog, title: str) -> Iterator[Post]:
+        return (p for p in self.post_iter(blog) if p.title == title)
+```
+
+## Creating indexes to improve efficiency
+
+One of the rules of efficiency is to completely avoid search. The use of search is the **definition of an inefficient application**. Brute-force search is perhaps the worst possible way to work with data.
+
+In order to avoid search and make our application more efficient we will make use of indexes which will store the items that users are more likely to want.
+
+Example of indexing in our ```Access``` class:
+
+```Python
+class IndexedAccess(Access):
+    def create_post(self, blog: Blog, post: Post) -> Post:
+        super().create_post(blog, post)
+        # Update the index; append doesn't work.
+        blog_index = f"_Index:{blog._id}"
+        self.database.setdefault(blog_index, [])
+        self.database[blog_index] = self.database[blog_index] + [post._id]
+
+        return post
+
+    def delete_post(self, post: Post) -> None:
+        super().delete_post(post)
+
+        # Update the index.
+        index_list = self.database[post._blog_id]
+        index_list.remove(post._id)
+        self.database[post._blog_id] = index_list
+
+    def post_iter(self, blog: Blog) -> Iterator[Post]:
+        blog_index = f"_Index:{blog._id}"
+        for k in self.database[blog_index]:
+            yield self.database[k]
+```
+
+We have now indexed our posts. When creating a new post we add it's id in the ```blog_index``` key of the database which is an administrative object.
+
+## Design considerations and tradeoffs
+
+One of the strenghts of ```shelve``` is that we can persist distinct items very easily. This also comes with a lot of responsabilty since it imposes a design burdern to identify the proper granularity. 
+
+> Too fine a granularity and we waste time assembling a container object from pieces scattered through the database. Too coarse a granularity, and we waste time fetching and storing items that aren't relevant.
+
+Since a shelf requires a key we must design appropriate keys for our objects and also manage them properly.
+
+## Application software layers
+
+Because of the sophistication available and freedom when using ```shelve`` our application needs a proper architecture, that means that it must be properly layered. Generally, we'll look at software architectures with layers such as the following:
+
+* **Presentation layer:** The top-level user interface, either a web presentation or a desktop GUI.
+* **Application layer:** This internal services or controllers that make the application work .This could be called the processing model, which is different from the logical data model.
+* **Bussiness layer or problem domain model layer:** The objects that define the business domain or problem space. This is sometimes called the logical data model.
+* **Infrastructure aspects:** Some applications include a number of cross-cutting concerns or aspects such as logging, security, network access or transaction management. These tend to  be pervasive and cut across multiple layers.
+* **Data access layer:** These are protocols or methods to access data objects.
+* **Persistence layer:** This is the physical data model as seen in file storage.
