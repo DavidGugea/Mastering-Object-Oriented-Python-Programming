@@ -1,0 +1,16 @@
+# Complete Settings
+table: !!python/object:__main__.Table
+    dealer: !!python/object:__main__.Hit17 {}
+    decks: 6
+    limit: 50
+    payout: !!python/tuple[3, 2]
+    split: !!python/object:__main__.NoReSplitAces {}
+player: !!python/object:__main__.Player
+    betting: !!python/object:__main__.Flat {}
+    init_stake: 50
+    max_rounds: 100
+    play: !!python/object:__main__.SomeStrategy {}
+    rounds: 0
+    stake: 63.0
+samples: 100
+outputfile: data.dat

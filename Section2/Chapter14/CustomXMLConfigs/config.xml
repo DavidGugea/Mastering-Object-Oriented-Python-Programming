@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<simulation>
+    <table>
+        <dealer>Hit17</dealer>
+        <split>NoReSplitAces</split>
+        <decks>6</decks>
+        <limit>50</limit>
+        <payout>(3, 2)</payout>
+    </table>
+    <player>
+        <betting>Flat</betting>
+        <play>SomeStrategy</play>
+        <rounds>100</rounds>
+        <stake>50</stake>
+    </player>
+    <simulator>
+        <outputfile>data.dat</outputfile>
+        <samples>100</samples>
+    </simulator>
+</simulation>

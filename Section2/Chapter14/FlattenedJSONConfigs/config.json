@@ -1,0 +1,13 @@
+{
+  "player.betting": "Flat",
+  "player.play": "SomeStrategy",
+  "player.rounds": "100",
+  "player.stake": "50",
+  "simulator.outputfile": "data.dat",
+  "simulator.samples": 100,
+  "table.dealer": "Hit17",
+  "table.decks": "6",
+  "table.limit": "50",
+  "table.payout": "(3, 2)",
+  "table.split": "NoResplitAces"
+}
