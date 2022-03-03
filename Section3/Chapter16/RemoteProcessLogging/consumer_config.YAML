@@ -1,0 +1,20 @@
+version:1
+disable_existing_loggers: False
+handlers:
+  console:
+    class: logging.StreamHandlers
+    stream: ext://sys.stderr
+    formatter: basic
+formatters:
+  basic:
+    style: "{"
+    format: "{levelname:s}:{name:s}:{message:s}"
+loggers:
+  combined:
+    handlers: [console]
+    formatter: detail
+    leve: INFO
+    propagate: False
+root:
+  handlers: [console]
+  level: INFO
