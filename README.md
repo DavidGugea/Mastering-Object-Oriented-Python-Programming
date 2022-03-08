@@ -3540,3 +3540,233 @@ Because of the sophistication available and freedom when using ```shelve`` our a
 * **Infrastructure aspects:** Some applications include a number of cross-cutting concerns or aspects such as logging, security, network access or transaction management. These tend to  be pervasive and cut across multiple layers.
 * **Data access layer:** These are protocols or methods to access data objects.
 * **Persistence layer:** This is the physical data model as seen in file storage.
+
+# 12. Storing and Retrieving Objects via SQLite
+
+## SQL databases, persistence, and objects
+
+When using with SQLite our application works with an implicit access layer that is based on the SQL language. It's structure using rows and columns that is very different from our way of thinking in OOP is known as an **impedance mismatch**.
+Withing SQL databases there are three tiers of data modeling:
+
+* **The conceptual model:** These are entities and relationships inside of the SQL model. They are not tables or columns, they might however represent views on tables. In most cases, the conceptual model can map to Python objects. This is the place where an **Object-Relational Mapping (ORM)** layer is useful.
+* **The logical model:** These are the tables, rows and columns that appear in the SQL database
+* **The physical model:** These are the files, blocks, pages, bits, and bytes of persistence physical storage.
+
+As previously mentioned, the fact that the structure of SQL using columsn, rows, tables, etc. doesn't perfectly match the idea of how we build and structure our code in OOP is called an **impedance mismatch**. One of the most important design decisions to take is how to cover it.
+Here are three strategies:
+
+* **Minimal mapping to Python:** This means that we won't map rows to python objects and that the application will work entirely within the SQL framework. This, however, limits us to the data types used in SQL.
+* **Manual mapping to Python:** We can define an access layer that maps the application's class definitions to the SQL logical model ( tables, columns, rows, keyl, etc. ). This works as a bridge between our application and SQL.
+* **ORM layer:** We can use an ORM layer in order to map python objects and the SQL logical model.
+
+
+## The SQL data model - rows and tables
+
+SQL only has a few atomic data types. An instance of an atomic data type is a single, indivisible unit of data. Each row essentially defines an object and the properties and defined by the columns. A table is the single data-structure that can be met in SQL and is essentially just a list of rows, where rows represent objects. 
+We can also select a column to represent the primary key so we can look at the rows as a mapping between the key and the rest of the object. We can actually just implement the key in our code as well in order to identify an object by its key and to make mapping objects between python and SQL rows easier.
+
+As previously mentioned, rows represent objects. That also means that each row can represent a mutable ```@dataclass```. Tables will then represent lsits of individual ```@dataclass``` objects:
+
+```Python
+from dataclasses import dataclass
+from typing import Union, Text
+import datetime
+SQLType = Union[Text, int, float, datetime.datetime, datetime.date, bytes]
+
+
+@dataclass
+class Row:
+    column_x: SQLType
+    ...
+
+
+Table = Union[List[Row], Dict[SQLType, Row]]
+```
+
+
+The SQL language can be partitioned into three sublanguages: 
+
+* the ***data definition language (DDL)***
+* the ***data manipulation language (DML)***
+* the ***data control language (DCL)***
+
+
+Here is an exmaple for DDL:
+
+```SQL
+CREATE TABLE blog(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT
+);
+CREATE TABLE post(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TIMESTAMP,
+    title TEXT,
+    rst_text TEXT,
+    blog_id INTEGER REFERENCE blog(id)
+);
+CREATE TABLE tag(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phrase TEXT UNIQUE ON CONFLICT ALL
+);
+CREATE TABLE assoc_post_tag(
+    post_id INTEGER REFERENCE post(id),
+    tag_id INTEGER REFERENCE tag(id),
+);
+```
+
+In order to build the tables using python:
+
+```Python
+import sqlite3
+database = sqlite3.connect("database.db")
+database.executescript(sql_ddl)
+```
+
+First we have create a connection to our database using the ```connect()``` method and that we have executed the script for the creation of the tables using ```executescript()```. We can also build a cursor using the ```database``` object with ```database.cursor()``` in order to execute scripts whenever we want.
+
+## CRUD processing via SQL DML statements
+
+The followin CRUD operations map directly to the SQL language statments:
+
+* Creation via ```INSERT```
+* Retrieval via ```SELECTj```
+* Update via ```UPDATE```
+* Deletion via  ```DELETE```
+
+However, building SQL statements using string manipulation involves security concerns ( see http://xkcd.com/327/ )
+
+***Never build literal SQL DML statements with string manipulation. It is very high risk to attempt to sanitize user-supplied text.***
+
+Python offers a work-around when it comes to string mainpulation. You can use positional binding with ```?``` or named bindings with ```:name``` in order to safely build SQL statements.
+
+***Here is an example using positional bindings:***
+
+```Python
+create_blog = """
+    INSERT INTO BLOG(title) VALUES(?)
+"""
+with closing(database.cursor()) as cursor:
+    cursor.execute(create_blog, ("Travel Blog", ))
+
+database.commit()
+```
+
+In this example we have used positional bindings with ```?``` in order to safely build an ```INSERT``` statement. We have also used a ```cursor``` object in order to execute the statement after binding a tuple of values. The final commit makes this change persistent, releasing any locks that were held.
+
+> In some applications, the SQL is stored as a sepearate configuration item. Keeping SQL separate is best handled as a mapping from a statement name to the SQL text. This can simplify application maintenance by keeping the SQL out of the Python programming.
+
+Now here is an exmample
+
+***Here is an example using named bindings:***
+
+```Python
+update_blog = """
+    UPDATE blog SET title=:new_title WHERE title=:old_title
+"""
+
+with closing(database.cursor()) as cursor:
+    cursor.execute(
+        update_blog,
+        dict(
+            new_title = "2013-2014 Travel",
+            old_title="Travel Blog"
+        )
+    )
+
+
+database.commit()
+```
+
+In this ```UPDATE``` statement we have used named bindings. Named bindings allow us to map names to certain values using dictionaries. 
+When python goes over the SQL statement, it will safely map the values in the dictionary to the SQL statement.
+
+## Querying rows with the SQL SELECT statement
+
+When it comes to querying rows, the ```SELECT``` statement is very helpful. Here is an example:
+
+```Python
+query_blog_by_title = """
+    SELECT * FROM blog WHERE title=?
+"""
+
+with closing(database.cursor()) as cursor:
+    cursor.execute(query_blog_by_title, ("2013-2014 Travel", ))
+
+    for blog in cursor.fetchall():
+        print("Blog {0}".format(blog))
+```
+
+After executing a ```SELECT``` statement, we have to get the values using a the ```fetchall()``` method ( there are ```fetch```-like methods)
+
+
+## SQL transactions and the ACID properties
+
+All the SQL DML statements operatin withing the context of a SQL transaction. A transaction must be commited as whole and rolled back as whole. This supports the atomicity property by creating a signle, atomic, indivisible change from one consistent state of the database to the next consistent state.
+
+***SQL DDL statements ( i.e. ```CREATE```, ```DROP```, etc. ) do not work withing a transaction. They implicitly end any previous in-process transactions.*** That happens because the statements change the structure of the database, so it wouldn't make sense for other transactions to use a state of the database that is no longer valid. This is why they are termianted.
+
+> Unless working in a special ***read uncommitted*** mode, each connection to the cadtaabase sees a consistent version of the data containin only the reuslts of the committed transactions. Uncommitted trasactions are generaly indivisible to other database client processes, supporintg the consistency property.
+
+A SQL transaction also supports an isolation level. An isolation level describes how the SQL DML statements will interefact among multiple, concurrent processes.
+
+Here are the following 4 isolation levels:
+
+* ***```isolation_level=None```:*** This is the default, otherwise known as the **autocommit** mode. In this mode, each inddividual SQL statement is committed to the database as it's executed. This can break the atomicity of complex transactions.
+* ***```isolation_level='DEFERRED'```:*** In this mode, locks are acquired late in the transaction. The ```BEGIN``` statement, for exampe, does not immediately acquire any locks. Other read operations ( i.e ```SELECT``` ) will acquire shared locks. Write operations will acquire reserved locks. While this can maximize the concurrency, it can also lead to deadlocks among competing trasaction processes.
+* ***```isolation_level='IMMEDIATE'```:*** In this mode, the transaction ```BEGIN``` statement acquires a lock that prevents all writes. Reads, however, will continue normally. This avoid deadlocks, and works well when transactions can be completed quickly.
+* ***```isolation_level='EXCLUSIVE'```:*** In this mode, the transaction ```BEGIN``` statement acquires a lock that prevents all access except for connections in a special read uncommitted mode.
+
+In SQL you have to use ```BEGIN TRANSACTION```, ```COMMIT TRANSACTION``` and ```ROLLBACK TRANSACTION``` in order to bracket a changes together. In Python, things are simplified. You just have to use the ```BEGIN``` statement in order to begin a transaction. The rest of the statements are taken care of by the ```sqlite3.Connection``` object when using methods such as ```commit()``` or ```rollback()```.
+
+Example:
+
+```Python
+database = sqlite3.connect("database.db", isolation_level='DEFERRED')
+
+try:
+    with closing(database.cursor()) as cursor:
+        cursor.execute("BEGIN")
+        # cursor.execute("STATEMENT 1")
+        # cursor.execute("STATEMENT 2")
+
+    database.commit()
+except Exception as e:
+    database.rollback()
+```
+
+In this example we have created a deferred connection to the database. This leads to the requirement to explicitly being and end each transaction. One typical scenario is to wrap a relevant DML statement in a ```try``` block and commit it and if the transaction goes bad use the ```except``` statement to do a rollback.
+You can also use a context manager for this:
+
+```Python
+database = sqlite3.connect("database.db", isolation_level='DEFERRED')
+
+with database:
+    database.execute("STATEMENT 1")
+    database.execute("STATEMENT 2")
+```
+
+## Designing primary and foregin databas ekeys
+
+There are three design patterns for relationships:
+
+* ***One-to-many:*** A number of children belong to a single parent object. Analog to our previous examples, is the relationship between one parent blog and many child posts. The ```REFERENCES``` clause shows us that many rows in the ```post``` table will reference one rwo from the ```blog``` table.
+* ***Many-to-many:*** This relationship is between many posts and many tags. This requires an intermediate association table betwen the ```post``` and ```tag``` tables; the intermediate tables has two (or more) foreign key associations. The many-to-many association table can also have attributes of its own.
+* ***One-to-one:*** This relationship is a less common design pattern. There's no technical difference from a one-to-many relationship. This is a question of the cardinality of rows on the child side of the relationship. To enforce a one-to-one relationship, some processing must prevent the creation of additional children.
+
+The table relationships can be implemented in the database in either or both of the following ways:
+
+* **Explicit:** We could call these declared, as they're part of the DDL declaration for a database. Ideally, they're enforced by the database server, and failure to comply with the relationship's constraints can lead to an error of some kind. These relationships will also be repeated in queries.
+* **Implicit:** These are relationships that are stated only in queries; they are not a formal part of the DDL.
+
+## Mapping Python objects to SQLite BLOB columns
+
+SQLite includes a BLOB ( binary large object ) data type. We can pickle our objects inside a column of this type. This technique however has a great impact on SQL processing since DML statements cannot be used on BLOB types.
+This technique should however only be used with media types such as images, videos, etc. since in those cases it is acceptable for those objects to be opaque to the surrounding SQL processing.
+
+## Mapping Python objects to database rows manually
+
+We can map SQL rows to class definitions so that we can create proper Python object instances from the data in a database.
+
+## Adding an ORM layer
+
