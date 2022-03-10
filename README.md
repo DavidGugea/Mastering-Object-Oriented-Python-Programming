@@ -3770,3 +3770,209 @@ We can map SQL rows to class definitions so that we can create proper Python obj
 
 ## Adding an ORM layer
 
+When it comes to adding an ORM there are [many options](https://wiki.python.org/moin/HigherLevelDatabaseProgramming).
+
+
+## Designing ORM-friendly classes
+
+When using an ORM, we have to fundamentally change the design of persistent classes. The semantics of the class definitions must have the following three distinct levels of meaning:
+
+* The class will be used to create Python objects. The method functions are used by these objects.
+* The class will also describe a SQL table and can be used by the ORM to create the SQL DDL that builds and maintains the database structure. The attributes will be mapped to SQL columns.
+* The class will also define the mappings between the SQL table and Python class. It will be the vehicle to turn Python operations into SQL DML and build Python objects from SQL query results.
+
+> SQLAlchemy requires us to build a ***declarative base class***. This base class provides a metaclass for our application's class definitions. It also serves as a repository for the metadata that we're defining for our database. If we follow the defaults, it's easy to call this class ```Base```.
+
+Here is a list with the most important imports:
+
+```Python
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, Table
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Date,
+    DateTime,
+    Enum,
+    Float,
+    Integer,
+    Interval,
+    LargeBinary,
+    Numeric,
+    PickleType,
+    SmallInteger,
+    String,
+    Text,
+    Time,
+    Unicode,
+    UnicodeText,
+    ForeignKey
+)
+from sqlalchemy.orm import relationship, backref
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+```
+
+SQLAlchemy's metaclass is built by the ```declarative_base()``` method:
+
+```Python
+Base = declarative_base()
+```
+
+Here's an example for the ```Blog``` class:
+
+```Python
+class Blog(Base):
+    __tablename__ = "BLOG"
+    id = Column(Integer, primary_key=True)
+    title = Column(String)
+
+    def as_dict(self):
+        return dict(
+            title=self.title,
+            underline="=" * len(self.title),
+            entries = [e.as_dict() for e in self.entries],
+        )
+
+```
+
+The ```Blog``` class is mapped to a table with the name "BLOG". After specifying the table name we created the id column which is auto incremented. That means that the surrogated keys will be generated for us. Afterwards we create the title column which is a column of type string.
+
+Here is the ```Post``` class which also contains two relationships to two different tables:
+
+```Python
+class Post(Base):
+    __tablename__ = "POST"
+
+    id = Column(Integer, primary_key=True)
+
+    title = Column(String)
+    date = Column(DateTime)
+    rst_text = Column(UnicodeText)
+    blog_id = Column(Integer, ForeignKey("BLOG.id"))
+
+    blog = relationship("Blog", backref="entries")
+    tags = relationship("Tag", secondary=assoc_post_tag, backref="posts")
+
+    def as_dict(self):
+        return dict(
+            title=self.title,
+            undelrine="-" * len(self.title),
+            date=self.date,
+            rst_text=self.rst_text,
+            tags=[t.phrase for t in self.tags],
+        )
+```
+
+## Building the schema with the ORM layer
+
+In order to connect to a database, we need to create an egine first. Another use for the engine is to build the database instance with our table declarations:
+
+```Python
+from sqlalchemy import create_engine
+
+engine = create_engine('sqlite://data/data.db', echo=True)
+
+Base.metadata.create_all(engine)
+```
+
+> When we create an ```Engine``` instance, we use a URL-like stirng that names the vendor product and provides all the additional parameters required to create the connection to that database. In the case of SQLite, the connection is a filename. In the case of other database products, there might be server host names and authentication credentials.
+
+After creating the engine and connecting to the database we need to do some metadata operations.
+We have used the ```create_all()``` method in order to create all tables.
+
+If we change the structure of a table however, it will not automatically change in the database as well. We need to drop it and save it again.
+
+The ```echo=True``` argument inside the ```create_engine()``` method allows you to see the logs of each SQL statement that gets executed.
+
+## Manipulating objects with the ORM layer
+
+In order to work with objects we will create sessions in sqlalchemy in order to make sure that the objects are kept in a persistent state inside the session cache. The cache is bound to the engine and the objects are added directly to the session cache. 
+
+> A session establishes all conversations with the database.
+
+```Python
+from sqlalchemy.orm import sessionmaker
+
+Session = sessionmaker(bind=engine)
+session = Session()
+```
+
+We have created a session class using the ```sessionmaker()``` function and specified the engine to which it has to be bound. Afterwards we have created a new session instance from the ```Session``` class.
+We generally only create one single session class using the ```sessionmaker()``` function and then create multiple session instances from that class.
+
+Here is an example of how to add an object to a session:
+
+```Python
+blog = Blog(title="Blog test title)
+session.add(blog)
+```
+
+This puts a new ```Blog``` object inside the session. ***The ```Blog``` object is not added to the database yet since we have to first commit the session in order for the changes to be saved.***
+
+After finishing the work with the session we have to commit it:
+
+```Python
+session.commit()
+```
+
+> The database inserts are all handled in a flurry of automatically generate SQL. The objects remained cached in the sesion. If our application continues using this session instance, then the pool of objects remains available without necessarily performing any actual queries against the database.
+
+## Querying
+
+A query is a feature of a session. Objects that are already in the session don't have to be fetched from the database which increases performance.
+
+Here is an example of querying:
+
+```Python
+session = Session()
+results = (
+    session.query(Post).join(assoc_post_tag).join(Tag).filter(
+        Tag.phrase = "test_phrase"
+    )
+)
+for post in results:
+    print(
+        post.blog.title, post.date,
+        post.title, [t.phrase for t in post.tags]
+    )
+```
+
+We have built a query using the fluent API of the session's query method in order to get posts filtered out by specific tags.
+
+## Schema evolution
+
+The changes of methods and properties of a Python class will not always change their mappings to SQL rows. There might be some changes when it comes to properties but certainly not when it comes to methods. Changes made to class attributes will also most likely not change the structure of the SQL tables. SQL can be flexible when it comes to converting Python data types into SQL data types and vice versa.
+
+However, there are also major changes that might need to be made that will modify the structure of our tables. A major change means that our objects will not be compatible with the rows of the tables. ***These kinds of changes should not be made by modifying the original Python class definitions. These kinds of changes should be made by defining a new subclass and providing an updated factory function to create instances of either the old or new class.***
+
+***Tools such as [```Alembic```](https://pypi.org/project/alembic/) and [```Migrate```](https://sqlalchemy-migrate.readthedocs.io/en/latest/) can help manager schema evolution.*** A disciplined history of schema migration steps is often essential for properly converting from old data to new data.
+
+There are two kinds of techniques used for transforming the schema from one version to the next:
+
+* SQL ```ALTER``` statements modify a table in place. There are a number of constraints and restrictions on what changes can be done with an ```ALTER```. This generally covers a number of minor changes.
+* Creating new tables and dropping old tables. Often, SQL schema changes require a new version of tables from data in the old tables. For a large database, this can be a time-consuming operation. For some kinds of structural changes, it's unavoidable.
+
+Any change in the structure of a schema should firstly be done on a backup database. The change involves running a one-time conversion script so it's best to do it in a backup database than running in on the user's live operational database first.
+
+## Design considerations and tradeoffs
+
+One of the strenghts of the ```sqlite3``` module is that it allows us to persist distinct objects, each with its own unique change history .When using a database that supports concurrent writes, we can have multiple processes updating the data, relying on SQLite to handle concurrency via its own interal locking.
+
+Using a relatinoal database imposes numerous restrictions. We must consider how to map our objects to rows of tables in the database as follows:
+
+* We can use SQL directly, using only the supported SQL column types and largely eschewing object-oriented classes.
+* We can use a manual mapping that extends SQLite to handle our objects as SQLite BLOB columns.
+* We can write our own access layer to adapt and convert between our objects and ASQL rows.
+* We can use an ORM layer to implement a row-to-object mapping.
+
+## Application software layers
+
+Because of the relative sophistication available when using ```sqlite3```, our appliation software must become more properly layered. Generally, we'll look at software architectures with the following patterns:
+
+* **The presentation layer:** This is a top-level user interface, either a web presentation or a desktop GUI.
+* **The application layer:** This is the internal service or controllers that make the application work. This could be called the processing model, and is different from the logical data model.
+* **The business layer or the problem domain model layer:** These are the objects that define the business domain or the problem space. This is sometimes called the logical data model .We looked at how we might model these objects using a microblog blog and post example.
+* **Infrastructure:** This often includes several layers, as well as other cross-cutting concerns, such as logging, security, and network access.
+* **The data ccess layer:** These are protocols or method to access the data objects. It is often an ORM layer. We've looked at SQLAlchemy. There are numerous other choices for this.
+* **The persistennce layer:** This is the physical data model as seen in file storage. The ```sqlite3``` module implements persistence. When using an ORM layer such as SQLAlchemy, we only reference SQLite when creating an engine.
