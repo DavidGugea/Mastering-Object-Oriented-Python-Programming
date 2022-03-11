@@ -3976,3 +3976,110 @@ Because of the relative sophistication available when using ```sqlite3```, our a
 * **Infrastructure:** This often includes several layers, as well as other cross-cutting concerns, such as logging, security, and network access.
 * **The data ccess layer:** These are protocols or method to access the data objects. It is often an ORM layer. We've looked at SQLAlchemy. There are numerous other choices for this.
 * **The persistennce layer:** This is the physical data model as seen in file storage. The ```sqlite3``` module implements persistence. When using an ORM layer such as SQLAlchemy, we only reference SQLite when creating an engine.
+
+# 13. Transmitting and Sharing Objects
+
+When we need to transmit an object, we perform some kind of ***REpresentational State Transfer ( REST )***, which includes serializing a representation of the state of the object. This representation can then be transferred to another process ( usually on another host computer ); the receiving process can then build a version of the original object from the representation of the state and a local copy of the class definition.
+
+Decomposing REST processing into the two aspects of representation and transfers lets us solve these problems independently. There are a variety of solutions that will lead to many workable combinations. We'll limit ourselves to two popular mechanisms: the RESTful web service, and the multiprocessing queue. Both will serialize and trasmit objects between processes.
+
+For web-based transfers, we'll leverage the **Hypertext Transfer Protocol ( HTTP )**. This allows us to implement the **Create-Retrieve-Update-Delete ( CRUD )** processing poperations based on the HTTP methods of *POST*, *GET*, *PATCH*, *PUT*, and *DELETE*. We can use this to build a RESTful web service. Python's ***Web Service Gateway Interface ( WSGI )*** standard defines a genearl pattern for web services. Any practical application will use one of the avaiable web frameworks that implement the WSGI standard. *RESTful web services often use a JSON representation of object state.*
+
+There is an additional consideration when working with RESTful transfers; a client providing data to a server might not be trustworthy. To cope with this, we must implement some securityi n cases where untrustworthy data might be present. For some representation, specifically JSON, there are few security considerations. YAML introductes a security concern and supports a safe load operation. Because of this security issue, the ```pickle``` module also offers a restricted unpickled that can be trusted to not import unusual modules and execute damaging code.
+
+## Class, state, and representation
+
+Separating clients and servers means that objcts must be transmitted between the two processes. We can decompose the large problem in to two smalle rproblems. The inter-networking protocols define a way to transmit bytes from a process on one host to a process on anothero hst. Serialization techniques transform our objects into bytes and the nreconstrcutr the bytes from the objects. It helps, when desgining classes, to focus on object ***state*** as the content exxchanged between processes.
+
+Unlike the ojbect state, we transmit class definitions through an entirely separate method. Class definitions chagne relatively slowly, so we excahgne the class definitions by the definitoin of the class in the foro of the Python source. If we need to supply a class definition to a remote hots,w e can installl the Python source code on that host.
+
+When a client is written in a language other than Python, then an equivalent class definition must be provided. A JavaSCript client, for example, will construct an object from the serialized JSON state of the Python object on the server. Two ojbects will have a similar state by sharing a common representation.
+
+We're making a firm distinction between the entire working object in Python's working memory, and the representation of the object's state that is transmitted. The whole Python object includes the class, superclasses, and other relationships in the Python runtime environment. The object's state may be represented by a simple string:
+
+```Python
+>>> from dataclasses import dataclass, asdict
+>>> import json
+>>> @dataclass
+...class Greeting:
+...    message: str
+>>> g = Greeting("Hello World")
+>>> text=json.dumps(asdict(g))
+>>> text
+'{"message": "Hello World"}'
+>>> text.encode('utf-8')
+b'{"message": "Hello World"}'
+```
+
+## Using HTTP and REST to transmit objects
+
+HTTP is define through a series of ***Request for Comments ( RFC )*** documents.
+
+The HTTP protocol includes requests and replies. 
+An HTTP request includes a method, a **Uniform Resource Identifier ( URI )**, headers and optional attachments. There are a couple of available methods. The most important ones are *GET* and *POST*. The standard browsers allow all kinds of requests *GET*, *POST*, *PUT* and *DELETE* which can be used for *CRUD* operations.
+An HTTP reply includes a status code number and reason text. It also includes headers and attached data. 
+
+Here are the patterns of status codes:
+
+* The **1xx** codes are informational, and not used widely in RESTful services.
+* The **2xx** replies indicate success.
+* The **3xx** status coes indicate the redirection of a request to a different host or a different URI path
+* The **4xx** response codes tell the client that the request is erroneous, and the reply should include a more detailed error message.
+* The **5xx** codesa generally mean that the server has had some kind of problem.
+
+Of these general ranges we're interested in just a few:
+
+* The ```200``` status code is the generic ```OK``` response from a server.
+* The ```201``` status code is the ```Created``` reponse, which might be used to show us that a ```POST``` request worked and an object was successfully created.
+* The ```204``` status code is the ```No Content``` response, which might be used for a ```DELETE``` request.
+* The ```400``` status code is a ```Bad Requeset``` responsense, used to reject invalid data used to ```POST```, ```PUT```, or ```PATCH``` an object.
+* The ```401``` status code is ```Unauthorized```; this would be used in a secure environment to reject invalid credentials. It may also be used if valid user credentials are used, but the user lacks the authorization to take the action they requested.
+* The ```404``` statsu code is ```Not Found```, which is generally used when te URI path information does not identify a resource.
+
+HTTP is stateless. That means that the server doesn't remember any interactions that it has had with a client. This is where cookies come in help. The client sends a normal request to the server but, by adding cookies, it can make the server remember who that specific client was. 
+
+For RESTful web services, however, the client will not be a person sitting at a browser. The client of a RESTful service will be an application that can maintain the state of the user experience. This means that RESTful services can leverage simpler, stateless HTTP without cookies. This also means taht states such as **logged-in** and **logged-out** don't apply to web services. For authentication purposes, credentials of some kind are often provided with each request. This imposes an obligation to secure the connection. In practice, all RESTful web servers will use a ***Secure Sockets Layer ( SSL )*** and an HTTPS connection.
+
+## Implementing CRUD operations via REST
+
+Here are the **three fundamental ideas behind the REST protocols**:
+
+1. Use the text serialization of an object's state
+2. Use the HTTP request URI to name an object; a URI can include any level of detail, including a scehma, module, class, and object identity in a uniform format.
+3. Use the HTTP method to map to CRUD rules to define the action to be performed on the named object.
+
+A REST server will often support CRUD operations via the following five abstract use cases:
+
+* **Create:** We'll use an HTTP ```POST``` request to create an ew object and a URI that provides class information only. A path such as ```/app/blog``` might name the class. The response could be a ```201``` message that includes a copy of the object as it was finally saved. The retruned object information may include the URI assigned by the RESTful server for the newly created object or the relevant keys to construct the URI. A ```POST``` request is expected to change the RESTful resources by creating something new.
+* **Retrieve - Search:** This is a request that can retrieve multiple objects. We'll use an HTTP ```GET``` request and a URI that provides search criteria, usually in the form of a query string after the ```?``` character. The URI might be ```/app/blog/?title="Travel Test"```. Note that ```GET``` never makes a change to the state of any RESTful resources.
+* **Retrieve - Single Instance:** This is a request for a single object. We'll use an HTTP ```GET``` request and a URI that names a specific object in the URI path. The URI might be ```/app/blog/id/```. While the response is exepcted to be a single object, it might still be wrapped in a list to make it compatible with a serach response. As this resopnse is ```GET```, tehre's no change in the state.
+* **Update:** We'll use an HTTP ```PUT``` request and a URI that identifies the object to be replaced. We can also use an HTTP ```PATCH``` rqeuest with a dcoument payload that provides an incremental update to an object. The URI might be ```/app/blog/id/```. The response could be a ```200``` messgae that includes a copy of the revised object.
+* **Delete:** We'll use an HTTP ```DELETE``` request and a URI that looks like ```/app/blog/id/```. The response could be a simple ```204 NO CONTENT``` message without any object details in the response.
+
+> As the HTTP protocol is stateless, there's no provision for logon and logoff. Each request must be separately authenticated. We will often make use of the HTTP ```Authorization``` header to provide the username nad password credentials. When doing this, we absolutel must also use SSL to provide security for the content of the ```Authorization``` header. There are more sophisticated alternatives that leverage separate identity management servers to provide authentication tokens rather than credentials.
+
+## Implementing non-CRUD operations
+
+Some applications will have operations that can't easily be characterized via CRUD verbs. We might, for example, have a **Remote Procedure Call ( RPC )** style application that performs a complex calculation. Nothing is really created on the server. We mimght think of RPC as an elaborate retrieve operation where the calculation's arguments are provided in each request.
+
+Most of the time, these calculation-focused operaitons can be implemented as the ```GET``` requests, where there is no change to the state of the objects in the server. An RPC-style request is often implemented via the HTTP ```POST``` method. The response can include a **Universally Unique Idnetifier ( UUID )** as part of tracking the request and responses. It allows for the caching of responses in the cases where they are very complex or take a very long tiem to compute. HTTP headers, including ```ETag``` and ```If-None-Match``` can be used to interact with the caching to optimize performance.
+
+This is justified by the idea of perserving a log of the request and reply as part of a non-repudiation scheme. This is particularly important in websites where a fee is charged for the services.
+
+## The REST protocol and ACID
+
+The ACID properties are ressential feature of a transaction that consits of multiple database operations. These properties don't automatically become part of the REST protocol. When we consider how HTTP works we must also ensure that the ACID properties are met.
+
+> Each HTTP request is atomic; therefore, we should avoid designing an application that makes a sequence of related ```POST``` requests and hopes that the individual steps are processed as a single, atomic update. Instead, we should look for a way to bundle all of the infromation into a single request to achieve a simpler, atomic transaction.
+
+In order to achieve the ACID properties, a common technique is to define bodies for the ```POST```,```PUT``` OR ```DELETE``` requests that contain *all* the relevant information. By providing a single compsite object, the application ca perform all of the operations in an atomic request. These large objects become documents that might contain several item that are part of a complex transaction.
+
+## Choosing a representation - JSON, XML or YAML
+
+There's no clear reason to pick a single representation; it's relatively easy to support a number of representations. The client should be permitted to demand a representation. There are several places where a client can specify the representation:
+
+* The client can use a aprt of a query string, such as ```https://host/app/class/id/?form=XML```. The portion of the URL after ```?``` uses the ```form``` value to define the output format.
+* The client can use a part of the URI, such as ```https://host/app;XML/class/id/```. The ```app;XML``` syntax names the application, ```app``` and the format ```XML``` by using a sub-delimiter of ```;``` withing the path
+* The client can use the ```https://host/app/class/id/#XML``` fragment identifier. The portion of the URL after ```#``` specifies a fragment, often a tag on a heading within an HTML page. For a RESTful request, the ```#XML``` fragment provides the format.
+* The client can use a separate header. The ```Accept``` header, for example, can be used to sepcify the representation as part of the ```MIME``` type. We might include ```Accept: application/json``` to specify that a JSON-formatted response is expected.
+
