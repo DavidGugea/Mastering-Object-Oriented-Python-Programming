@@ -4083,3 +4083,764 @@ There's no clear reason to pick a single representation; it's relatively easy to
 * The client can use the ```https://host/app/class/id/#XML``` fragment identifier. The portion of the URL after ```#``` specifies a fragment, often a tag on a heading within an HTML page. For a RESTful request, the ```#XML``` fragment provides the format.
 * The client can use a separate header. The ```Accept``` header, for example, can be used to sepcify the representation as part of the ```MIME``` type. We might include ```Accept: application/json``` to specify that a JSON-formatted response is expected.
 
+## Using Flask to build a RESTful web service
+
+> Since the REST concepts are built on the HTTP protocol, a RESTful API is an extension to an HTTP service. For robust, high-performance, secure operations, a common practice is to build on a server such as **Apache HTTPD** or **NGINX**. These servers don't support Python directly; they require an extension module to interface with a Python application.
+
+> Any interface between externally-facing web servers and Python will adhere to the ***Web Services Gateway Interface ( WSGI )*** . The ***WSGI*** standard defines a minimal set of features ahred by all Python web frameworks.
+
+Example of a small Flask REST implementation:
+
+```Python
+from flask import Flask, jsonify
+from http import HTTPStatus
+
+app = Flask(__name__)
+
+@app.route("/test/route")
+def test_route() -> Tuple[Dict[str, Any], int]:
+    return jsonify(status="OK", test_tuple=(1, 2, 3)), HTTPStatus.OK
+```
+
+The ```@app.route``` decorator is used by functions that handle requests and create responses.
+
+## Designing RESTful object identifiers
+
+When serialization objects we must give them some kind of identifiers. When working with ```shelve``` or ```sqlite3``` we have used surrogate keys. Surrogate keys can work with REST applications as well.
+
+***The most important thing to know about REST URI's is that [URI's are now allowed to change](https://www.w3.org/Provider/Style/URI.html).***
+
+> It is important for us to define a URI that is never going to change. It's essential that the stateful aspects of an object are never used as part of the URI. For example, a microblogging applicaiton may support multiple authors. If we organize blgo posts into folders by the author, we create problems for shraed autorship and we create larger problems when one author takes over another author's content. We don't want the URI to switch when a purely administrative feature, such as the ownership, cahnges.
+> A RESTful application may offer a number of indices or search criteria. However, the essential identification of a resource or object should never change as the indices are changed or reorganized.
+> For relatively simple objects, we can often identify some sort of indentifier - often a database surrogate key. n the case of blog posts, it's common to use a publication date ( as that can't change ) and a version of the title with punctuation and spaces replace by ```_``` characters. The idea is to create an identifier that will not change, no matter how the site gets reorganized. Adding or changing indexes can't chagne the essential identification of a microblog post.
+
+## Multiple layers of REST services
+
+It's common for a RESTfull application to use a database to store persistent objects. This often leads to a multi-tier web application. One view of a design will focus on these three tiers:
+
+* **Presentation** to people is handled is handled by HTML pages, possibly including JavaScript. The HTML content often starts as templates, and a tool such as Jinja is used to inject data into the HTML template. In many cases, the presentation layer is a separate Flask application focused on supporting features of a ruch user experience, including stateful sessions and secure authentication. This layer will make a request to the application layer via RESTful requests.
+* **Application processing** is done via a RESTful server that models the problem domain. Concerns such as user authentication or stateful interactions are not part of this layer.
+* **Persistence** is done via a database of some kind. In may practical applications, a complex module will deifine an ```init_app()``` function to initialize a database conneciton.
+
+## Creating a secure REST service
+
+Security in a REST server can be decomposed in two parts: authentication and authorization. We must be able to know who the user is and we must be able to say what rights the user has. 
+There are a lot of techniques that make REST services more secure. All of them however depend on SSL. It's essential to create proper certificates and use them to ensure that all data transmissions are encrypted.
+
+> When HTTP over SSL ( HTTPS ) is used, then the handling of credentials and authentication can be simplified. Without HTTPS, the credential must be encrypted in some way to be sure they aren't sniffed in transmission. With HTTPS, credentials such as usernames and password can be included in headers by using a simple base-64 serialization of the bytes.
+
+There are a numberof ways of handling authenticaiton; here are two techniques:
+
+* **The HTTP ```Authorization``` header can be used** ( the header's purpose is authentication, but it's called ```Authorization``` ). The ```Basic``` type is used to provide username and password. The ```Bearer``` type can be used to provide an ```OAuth``` token. This is often used by the presentation layer where a human supplies their password.
+* **The HTTP ```Api-Key``` header can be used** to provide a role or authorization. This is often provided by an API client application, and is configureed by trusted administrators. This can involve relatively simple authorization checks.
+
+> It's best to user a library such as [authlib](https://authlib.org/) for dealing with user credentials and the ```Authorization``` header. While the essential rules for handling password are generally simple, it's easier to use a well-respected package.
+
+Using an ```API-Key``` header for authorization checks if something is designed to fit within the Flask framework. The general approach requires three elements:
+
+* A repository of valid ```Api-Key``` values, or an algorithm for validation a key.
+* An ```init_app()``` function to do any one-time preparation. This might include reading a file, or opening a database.
+* A decorator for the application view functions.
+
+## Hashing user passwords
+
+Perhaps the most important advice that can possibly be offered on the usbject of security is the following:
+
+***Never Store Passwords.***
+***Only a repeated cryptographic hash of password plus salt can be stored on a server. The password itself must be utterly unrecoverable. Do not ever store any recoverable password as part of an application.***
+
+## Implementing REST with a web application framework
+
+> A RESTful web server is a web application. This means we can leverage any of the popular Python web application frameworks. The complexity of creating RESTful services is low. The preceding examples illustrate how simple it is to map the CRUD rules to HTTP Methods.
+
+Security, in particular, can be challenging. There are several best practices including the following:
+
+* Always use SSL. For final production, use, purchase a certificate from a trusted ***Certification Authority ( CA )*** .
+* Never encrypt or store password, alwyas use salted hashing.
+* Avoid building home-brewed authentication. Use project such as [flask-dance](https://flask-dance.readthedocs.io/en/latest/) or [authlib](https://authlib.org/)
+
+## Using a message queue to transmit objects
+
+```>```
+
+The ```multiprocessing``` uses both the serialization and transmission of objects. We can use queues and pipe to serialize objets that are then transmitted to other processes. There are numerous external projects to provide sohpisticated message queue processing. We'll focus in the ```multiprocessing``` queue because tis' built in to Python and works nicely.
+
+For high-performance applications, a faster message queue may be necessary. It may also be necessary to use a faster serialization technique than pickling. The multiprocessing module relies in ```pickle``` to encode objects. We can't provide a restricted unpickler easily; therefore, this module offers us some relatively simple security measures put into place tho prevent any unpickle problems.
+
+There is one important design consideration when using ```multiprocessing```: it's generally best to avoid having multiple processes ( or multiple threads ) attemtping to update shared objects. The synchronization and locking issues are so profound ( and easy to get wrong ). It's very easy for locking and buffering to make a mess of multithreaded processing.
+
+Using process-level synchrhonization via RESTful web services or ```multiprocessing``` can prevent synchornization issues because there are no shared objects. The essential design principle is to look at the processing as a pipeline of discrete steps. Each processing step will have an input queue and an output queue; the step will fetch an object, perform some processing, and write the object.
+
+The ```multiprocessing``` philosophy matches the ```POSIX``` concept of a shell pipeline, written as ```process1 | process2 | process3```. This kind of shell pipelin involves three concurrent processes interconnected with pipes. The important difference is that we don't need to use ```STDIN```, ```STDOUT``` or an explicit serialization of the objects. We can trust the ```multiprocessing``` module to handle the **operating system ( OS )** level infrastructure.
+
+The POSIX shell pipelines are limited in that each pipe has a single producer and a single consumer. The Python ```multiprocessing``` module allows us to create message queues that include multiple consumers. This allows us to have a pipeline that fans out from one source process to mulitple sink processes. A queue can also ahve multiple consumers taht allows us to build a pipeline where the results of multiple source processes can be combined by a single sink process.
+
+To maximize throughput on a given computer system, we need to have enough work pending so taht no rpcoessor or core is ever left with nothing useful to do. When any given OS process is waiting for a resource, at least one other process should be ready to run.
+
+When looking at our simulations, for example, we need to gather statistically significatn simulation data by exercising a player strategy or betting strategy ( or both ) a number of times. The idea is to create a queue of processing requests so that our computer's processors ( and cores ) are fully engaged in processing our simulations.
+
+Each processing request can be a Python object. The ```multiprocessing``` module will pickle that object so that it is transmitted via the queu to another process.
+
+## Defining processes
+
+We must design each processing step as a *simple* loop that gets a request from a queue, processes that request, and places the results into another queue. This decomposes the large problem into a number of stages that form ap ipeline. Because each of these stages runs concurrently, the system resources use will be maximzed. Furthermore, as the stages involve simple gets and puts into independent queues, there are no problems with complex locking or shared resources. A process can be a simple function or a callable object. We'll focus on defining processes as subclasses of ```multiprocessing.Process```. This gives us the most flexibility.
+
+# 14. Configuration Files and Persistence
+
+A configuration file is a form of object persistence. It is a serialized, editable file that can be used by an application in order to set up its environment. Configuration files are widely used in servers in order to set up start-up variables and default configurations.
+
+Before we can implement a configuration file we must design our application to be configurable. This adds some careful considerations when it comes to dependencies.
+We must also choose the type of configuration file and where the configurations will be stored. Usually, configuration files contain default values. 
+
+Here are six types of representations that can be used for configuration files:
+
+* ***INI files*** use a format that was pioneered as part of Windows. The file is popular, in part, because it is an incumbent among available formats and has a long history.
+* ***PY Files*** are plain-old Python code. They have numerous advantages because of the familiarity and simplcity of the syntax. The configuration can be used by an ```import``` statement in the application.
+* ***JSON and YAML*** are both designed to be user-friendly and easy to edit.
+* ***Properties files*** are often used in a Java environment. They're relatively easy to work with and they are also designed to be human-friendly. There's no built-in parser for this.
+* ***XML files*** are popular but they are wordy, which means that, sometimes, they are difficult to edit properly. macOS uses an XML-based format called a property list or a ***PLIST*** file
+
+## Configuration file use cases
+
+There are two general use cases of configuration files:
+
+* A person needs to edit a configuration file
+* A piece of software will read a configuration file and use the its options and arguments in order to change its behavior
+
+Configuration files are rarely the primary input of an application. They can fine tune applications but they are rarely used as the primary input. In a web application, configuration files may be used for the server in order to set up some default values but the primary inputs might be web requests and the database or filesystems. An example where configuration files can be used as a primary form of input would be in simulations.
+
+> There's also a blurry edge to the distinction between the application program and configuration input. Ideally, an application has one behavior irrespective of the configuration detauls. Pragmatically, however, the configuration might introduce additioinal startegies or states to an existing application, changing its behavior in fundamental ways. In this case, the configuration parameters become part of the code, not merely options or limits applied to a fixed code base.
+
+In addition to being chagne by a person, another use case for a configuration file is to save an application's current state. For example, in a GUI application, you can save the width/height of windows, you can save a special layout that the user hsa chosen for himself, etc.
+
+A configuration file can provide a number of domains of arguments and parameter values to an application. We need to explore some of these various kinds of data in more detail in order to decide how to represent them best. Some common types of parameters are listed as follows:
+
+* Device names, which may overlap with the filesystem's location
+* Filesystem locations and search paths
+* Limits and boundaries
+* Message templates and data format specifications
+* Message text, possibly translated for internationalizaiton
+* Network names, addresses, and port numbers
+* Optional behaviors, which are sometimes called feature toggles
+* Security keys, tokens, usernames, and passwords
+
+Another parameter might be :
+
+* Additional features, plugins, extensions; in effect, additional code
+
+This is a more difficult parameter to integrate since you don't necessarily add a block of text, you add code. The best way to get around this problem is by adding a path to the code that adds the specific feature/plugin and then use an ```import``` statement inside the software in order to integrate it properly from the configuration file.
+
+For a configuraiton that introduces non-Python code as part of a pulgin or extension, we have two toher techniques to make the external code usable:
+
+* For binaries that aren't proper executeable programs, we can try using the ```ctypes``` module to call define API methods
+* For binaries that are executable programs, teh ``subprocess``` module gives us ways to execute them.
+
+## Representation, persistence, state, and usability
+
+When lookint at a configuration file, we're looking at a human-friendly version of an object state. Often, we'll provide the state of more than one object. When we edit a configuration file, we're changing the persistent state of an object that will get reloaded when the application is started ( or restarted ). We have two common ways of looking at a configuration file:
+
+* A mapping or a group of mappings from parameter names to configuration values. Note that even when there are nested mappings, the structure is essentially keys and values.
+* A serialized object that has complex attributes and properties with the configuration values. The distinguishing feature is the possibility of properties, methods, and derived values in addition to the user-supplied values.
+
+> Both of these views are equivalent; the mapping view relies on a built-in dictionary or namespace object. The serialized object will be a more complex Python object, which has been created from an external, human editable representation of the object. The advantage of a dictionary is the simplicity of putting a few parameters into a simple structure. The advantage of a serialized object is its ability to track the number of complex relationships.
+
+> For a flat dicitonary or namespace to work, the parameter names must be chosen carefully. Part of designing the configuration is to design useful keys. A mapping requires unique names so that other parts of the application can refer to it properly.
+> When we try to reduce a configuration file to a single mapping, we often discover t that there are groups of related parameters. This leads to namespaces within the overall collection of names.
+
+In some cases you might be better off using a python file as the configuration file. If a configuration file's syntax is to complex then it might not be of any real value.
+
+## Application configuration design patterns
+
+There are two core design patterns for the scope of objects used to configure a Python application:
+
+* **A global property map:** A global object can contain all of the configuration parameters. A simple class definition is perhaps an ideal way to provide names and values; this tends to follow the **Singleton** design pattern ensuring that only one instance exists. Alternative include a dictionary with pairs of ```name: value```, or a ```types.SimpleNamespace``` object of attribute values.
+* **Object construction:** Instead of a single o bject, we'll define a kind of **Factory** or collection of **Factories** that use the configuration data to build the objects of the application. In this case, the configuration information is used once when a program is started and never again. The configuration information isn't kept around as a global object.
+
+The global property map is very easy to use and very extensible. Here is an example of how such a class would be defined:
+
+```Python
+class Configuration:
+    some_attribute = "default_value"
+```
+
+This class can be used as a global container of attributes. We can also add more attributes to it or even change them:
+
+```Python
+Configuration.some_attribute = "use-supplied value"
+```
+
+The second example involves using a module for the configuration. We might have a module named ```configuration.py``` and have the following dictionary stored inside:
+
+```Python
+settings = {
+    "some_attribute" : "user-supplied value"
+}
+```
+
+The application can now use ```configuration.settings``` as a global repository for all of the application's settings.
+
+> Generally, we'll tyr to avoid having a global variable for the configuration. Because a global variable is implicitly present everywhere, it can be misused to carry stateful processing in addition to configuration values. Instead of a global variable, we can often handle the configuration relatively more neatly through object construction.
+
+## Configuration via object construction
+
+When configuring an application through object construction, the objective is to build the required objects at startup time. In effect, the configuration file defines the various initialization parameters for the objects that will be built.
+
+Here is an example:
+
+```Python
+import csv
+
+
+def simulate_blackjack() -> None:
+    # Configuration
+    dealer_rule = Hit17()
+    split_rule = NoReSplitAces()
+    table = Table(
+        decks=6, limit=50, dealer=dealer_rule,
+        split=split_rule, payout=(3, 2)
+    )
+    player_rule = SomeStrategy()
+    betting_rule = Flat()
+    player = Player(
+        play=player_rule, betting=betting_rule,
+        max_rounds=100, init_stake=50
+    )
+
+    # Operation
+    simulator = Simulate(table, player, samples=100)
+    result_path = Path.cwd() / "data" / "data.dat"
+    with result_path.open("w", newline="") as results:
+        wtr = csv.writer(results)
+        wtr.writerows(gamestats)
+```
+
+> The preceding example is a kind of technology spike - an initial draft solution - with hardcoded object instances and initial values. Any change is essentially a rewrite. A more polished application will rely on externally-supplied configuration parameters to determine the classes of objects and their initial values. When we separate the configuration parameters from the code, it means we don't have to *tweak* the code to make a change. This gives us consistent, testable software. A small change is accomplished by hanging the configuration inputs instead of changing the code.
+
+## Implementing a configuration hierarchy
+
+We often have several choices as to where a configuration file should be placed. There are several common location,s and we can use any combniation of choices to create kind of inheritance hierarhcy for the parameters:
+
+* **The python installation directory:** We can find the installed location for a module using the ```__file__``` attribute of the module. From here, we can use a ```Path``` object to locate a configuration file:
+
+```Python
+>>> import this
+>>> from pathlib import Path
+>>> Path(this.__file__)
+PosixPath('...')
+```
+
+* **The system application installation directory:** This is often based on an owning username. In some cases, we can simply create a special user ID to won the application itself. This lsets us the ```~theapp/``` as a configuration locatin. We can use ```Path("~theapp").expanduser()``` to track down the configuration defaults. In other cases, the application's code may live in the ```/opt``` or ```/var``` directories.
+* **A system-wide configuration directory:** This is ften present in ```/etc```. Note that this can be transformed into ```C:\etc``` on Windows.
+* **The current user's home directory:** We generally use ```Path.home()``` to identify the user's home directory.
+* **The current working directory:** We generally use ```Path.cwd()``` to identify the current working directory.
+* **A file named in the command-line parameters:** This is an explicitly naed file and no further processing should be done to the name.
+
+> An application can integrate configuration options from all of these sources. Any installation default values should be considered the most generic and least user-specific; these defaults can be overridden by more specific values.
+
+## Storing the configuration in INI files
+
+The module ```configparser``` is used to parse INI files. For additional details on the INI file, read [this Wikipedia article](https://en.wikipedia.org/wiki/INI_file).
+
+An INI file has *sections* and *properties* within each section. An example of an INI file for our sample main program:
+
+```INI
+; Default casino rules
+[table]
+    dealer= Hit17
+    split= NoResplitAces
+    decks= 6
+    limit= 50
+    payout = (3,2)
+
+; Player with SomeStrategy
+; Need to compare with OtherSTrategy
+[player]
+    play= SomeStrategy
+    betting= Flat
+    max_rounds= 100
+    init_stake= 50
+
+[simulator]
+    samples= 100
+    outputfile= test_output_file.dat
+```
+
+The parameters are broken into three sections. Each section has named parameters that correspond to the class names and initialization values.
+
+Here is how we can parse this type of file:
+
+```Python
+import configparser
+config = configparser.ConfigParser()
+config.read('blackjack.ini')
+```
+
+The generic configuration files that are part of the software installation will be parsed first to provide defaults. The user-specific configuration will be parsed later to override these defaults.
+
+Here is how the configuration can be used to build our simulation:
+
+```Python
+def main_ini(config: configparser.ConfigParser) -> None:
+    dealer_nm = config.get("table", "dealer", fallback="Hit17")
+    dealer_rule = {
+        "Hit17": Hit17(),
+        "Stand17": Stand17()
+    }.get(dealer_nm, Hit17())
+
+    split_nm = config.get("table", "split", fallback="ReSplit")
+    split_rule = {
+        "ReSplit": ReSplit(),
+        "NoReSplit": NoReSplit(),
+        "NoReSplitAces": NoReSplitAces(),
+    }.get(split_nm, ReSplit())
+
+    player_nm = config.get("player", "play", fallback="SomeStrategy")
+    player_rule = {
+        "SomeStrategy": SomeStrategy(),
+        "AnotherStrategy": AnotherStrategy(),
+    }.get(player_nm, SomeStrategy())
+
+    bet_nm = config.get("player", "betting", fallback="Flat")
+    betting_rule = {
+        "Flat": Flat(),
+        "Martingale": Martingale(),
+        "OneThreeTwoSix": OneThreeTwoSix()
+    }.get(bet_nm, Flat())
+
+    max_rounds = config.getint("player", "max_rounds", fallback=100)
+    init_stake = config.getint("player", "init_stake", fallback=50)
+
+    player = Player(
+        play=player_rule,
+        betting=betting_rule,
+        max_rounds=max_rounds,
+        init_stake=init_stake
+    )
+
+    outputfile = config.get("simulator", "outputfile", fallback="blackjack.csv")
+    samples = config.getint("simulator", "samples", fallback=100)
+    simulator = Simulate(table, player, samples=samples)
+    with Path(outputfile).open("w", newline="") as results:
+        wtr = csv.writer(results)
+        wtr.writerows(simulator)
+
+
+decks = config.getint("table", "decks", fallback=6)
+limit = config.getint("table", "limit", fallback=100)
+
+payout = eval(
+    config.get("table", "payout", fallback="(3, 2)")
+)
+
+table = Table(
+    decks=decks, limit=limit, dealer=dealer_rule,
+    split=split_rule, payout=payout
+)
+```
+
+## Handling more literals via the ```eval()``` variants
+
+A configuration file might have values of types that are not just strings. While the primitive data types don't present a problem, we might have problems when trying to store data structures such as ```tuple```, ```list```, or ```dict``` in our configuration files. 
+
+For some types ( ```int```, ```float```, ```bool```, ```complex```, ```decimal.Decimal``` and ```fractions.Fraction``` ) we can sefly convert the string to a literal value because the ```__init__()``` object for these types can handle string values.
+
+For other types, however, we can't simply do the string conversino. We have several choices on how to proceed:
+
+* Forbid these data types an rely on the configuration file syntax plus processing rules to assemble complex Python values from very simple parts; this is tedious but it can be made to work. In the case of the table payout, we need to break the payout into two separate configuration tiems for the numerator and denominator. This is a lot of configuration file complexity for a simple two-tuple.
+* Use ```ast.literal_eval()``` as it handles many cases of Python literal values. This is often the ideal solution.
+* Use ```eval()``` to simply evaluate the string and create the expected Python object. This will parse more kinds of objects than ```ast.literal_eval()```. But, do consider wheter this level of generality is really needed.
+* Use the ```ast``` module to complie and then vet the resulting code object. This vetting process can check for the ```import``` statements sas well as use some small set of permitted modules. This is quite compex; if we're effectively allows code, perhaps we should be designing a framework and simply including Python code.
+
+***If we are performing RESTful transfers of Python objects thorugh the network, ```eval()``` of the resulting text cannot be trusted.***
+
+> **In the case of reading a local configuration file, however, ```eval()``` is certainly usable. In some cases, the Python application code is as easily modified as the configuration file. Worrying about ```eval()``` may not be helpful when the base code can be tweaked.**
+
+Here's how we use ```ast.literal_eval()``` instead of ```eval():```
+
+```Python
+>>> import ast
+>>> ast.literal_eval('(3, 2)')
+(3, 2)
+```
+
+## Storing the configuration in PY files
+
+The PY file format means using Python as the configuration file. The configuration file will simply be just a module. This can remove the need for sophisticated parsing to get to the configuration values.
+
+Using Python gives us a number of design considerations. We have two overall strategies to use Python as the configuration file:
+
+* **A top level script:** In this case, the configuration file is simply the top-most main program.
+* **An ```exec()``` import:** In this case, our configuration file provides parameter values that are collected into module global variables.
+
+Here is an example of a top-level script file:
+
+```Python
+from simulator import *
+
+
+def simulate_SomeStrategy_Flat() -> None:
+    dealer_rule = Hit17()
+    split_rule = NoReSplitAces()
+    table = Table(
+        decks=6, limit=50, dealer=dealer_rule, split=split_rule, payout=(3, 2)
+    )
+
+    player_rule = SomeStrategy()
+    betting_rule = Flat()
+    player = Player(
+        play=player_rule, betting=betting_rule, max_rounds=100, init_stake=50
+    )
+
+    simulate(table, player, Path.cwd()/"data"/"data.dat", 100)
+
+
+if __name__ == '__main__':
+    simulate_SomeStrategy_Flat()
+```
+
+## Configuration via SimpleNamespace
+
+Using a ```types.SimpleNamespace``` object allows u to simply add attributes as needed; this is similar to using a class definition. When defining a class, all of the assignment statements are localized to the class. When creating a ```SimpleNamespace``` object, we'll need to explicitly qualify every name with the ```NameSpace``` object that we're populating. Example:
+
+```Python
+>>> import types
+>>> config = types.SimpleNamespace(
+    param1="some value",
+    param2=3.14
+)
+>>> config
+namespace(param1="some value", param2=3.14)
+```
+
+This works delightfully well if all of the configuration values are independent of each toher. In our case, however, we have some complex dependencies among the conifguration values. We can handle this in one of the following two ways:
+
+* Provide only the independent values and leave it to the application to build the dependent values
+* Build the values in the namespace incrementally
+
+In order to create independent values, we might do something like this:
+
+```Python
+import types
+
+config2c = types.SimpleNamespace(
+    dealer_rule=Hit17(),
+    split_rule=NoReSplitAces(),
+    player_rule=SomeStrategy(),
+    betting_rule=Flat(),
+    outputfile=Path.cwd() / "data" / "data.dat",
+    samples=100,
+)
+config2c.table = Table(
+    decks=6,
+    limit=50,
+    dealer=config2c.dealer_rule,
+    split=config2c.split_rule,
+    playout=(3, 2),
+)
+config2c.player = Player(
+    play=config2c.player_rule,
+    betting=config2c.betting_rule,
+    max_rounds=100,
+    init_stake=50
+)
+```
+
+## Using Python with ```exec()``` for the configuration
+
+When we decide to use Python as the configuration file we can use the ```exec()``` function to evaluate a block of code in a constrained namespace.
+
+Here is an example of a configuration file:
+
+```Python
+# Setup
+
+# Table
+dealer_rule = Hit17()
+split_rule = NoReSplitAces()
+table = Table(decks=6, limit=50, dealer=dealer_rule, split=split_rule, payout=(3, 2))
+
+# Player
+player_rule = SomeStrategy()
+betting_rule = Flat()
+player = PLayer(play=player_rule, betting=betting_rule, max_rounds=100, init_stake=50)
+
+# Simulation
+outputfile = Path.cwd() / "data" / "data.dat"
+samples = 100
+
+```
+
+This is an easy-to-read configuration and it's similar to the INI files. We can evaluate this file, creating a kind of namesapce, using the ```exec()``` function:
+
+```Python
+from typing import Dict, Any
+from types import SimpleNamespace
+
+
+code = compile(open("setup.py", "r").read(), "stringio", "exec")
+assignments: Dict[str, Any] = dict()
+exec(code, globals(), assignments)
+config = SimpleNamespace(**assignments)
+
+simulate(config.table, config.player, config.outputfile, config.samples)
+```
+
+In this example, the code object, ```code```, is created with the ```compile()``` function. Note that this isn't required; we can simply provide the text of the file to the ```exec()``` function and it will compile the code and execute it.
+
+The call to ```exec()``` provides three arguments:
+
+* The compiled code object
+* A dictionary that should be used to resolve any global anmes
+* A dictionary that will be used for any locals that get created
+
+## Why ```exec()``` is a non-problem
+
+```>```
+
+The previous section discussed ```eval()```; the same considerations also apply to ```exec()```.
+
+Generallyy, the set of avaiable ```globals()``` is tightly controlled. Access to the ```os``` and ```subprocess``` modules, or the ```__import__()``` function, can be eliminated by removing them from the globals provided to ```exec()```.
+
+If you have an evil programmer who will cleverly corrupt hte configuration files, then recall that they ahve complete access to the entire Python source. So, why would they waste teim cleverly tweaking configuration files when they can just change the application code itself?
+
+One question can be summarized like this: *What if someone thinks they can monkey patch the application by forcing new code in via the configuration file?* The person trying this is just as likely to break teh application through a number of other equally clever or deranged channels. Avoiding Python configuration files won't sotp the unscrupuluous programmer from breaking things by doing something else that's ill-advised. The Python soruce is directly avaiable for modification, so unnecessarily worrying about ```exec()``` may not be beneficial.
+
+In the case where configuration parameters are downloaded through a web application, then ```exec()```, ```eval()``` and Python syntax should not be used. For these cases, the parameters need to be in a language such as JSON or YAML. Accepting a configuration file from a remote computer is a type of RESTful state transfer.
+
+## Using ChainMap for defaults and overrides
+
+A ChainMap is a collection of dictionaries. When you are looking for a specific key in the ChainMap, it will return the first key found in the collection of dictionaries. The dictionaries are searched in order. In the case of configuration files, the configuration files that contain the default values should be put at the end since they are searched last while the configuration files that have more input from the user, that are less general, should be put more up front since they are a lot more specific and map the requested values from the user. 
+
+Example:
+
+```Python
+from collections import ChainMap
+
+defaults = {
+    'a': 10,
+    'b': 'test_value'
+}
+user_specific_values = {
+    'a': 15
+}
+
+cm = ChainMap(user_specific_values, defaults)
+print(cm) # ChainMap({'a': 15}, {'a': 10, 'b': 'test_value'})
+
+print(cm['a']) # 15
+print(cm['b']) # test_value
+```
+
+In this example, the default values are set in the back and the user specific values are set up front. The key ```a``` is overriden in the ```user_specific_values``` dictionary. Since hte overriden key is set up in the dictionary that is in front of the defaults, when you write ```cm['a']``` you will get the value for the ```a``` key from the ```user_specific_values``` dictionary.
+
+You can also implement this when lookin for locations where configuration files might be stored:
+
+```Python
+from pathlib import Path
+import typing
+from typing import Any, Dict
+from collections import ChainMap
+
+config_name = "config.py"
+config_locations = (
+    Path.cwd(),
+    Path.home(),
+    Path("/etc/app"),
+    Path(__file__)
+)
+
+candidates = (dir / config_name for dir in config_locations)
+config_paths = (path for path in candidates if path.exists())
+
+cm_config: typing.ChainMap[str, Any] = ChainMap()
+for path in config_paths:
+    config_layer: Dict[str, Any] = {}
+    source_code = path.read_text()
+    exec(source_code, globals(), config_layer)
+    cm_config.maps.append(config_layer)
+
+simulate(config.table, config.player, config.outputfile, config.samples)
+```
+
+We have stored multiple locations where configuration files might be stored. The first location where we are looking for a configuration file is in the current directory ( ```Path.cwd()``` ). The second one is the home folder ( ```Path.home()``` ), the third one is in ```/etc/app```, etc.
+
+Even if we have multiple configuration files with the same name, they will be searched in order in the given ```ChainMap```.
+
+## Storing the configuration in JSON or YAML files
+
+We can store configuration values in JSON or YAML files with relative ease. The syntax is designed to be user-friendly. While we can represented a wide variety of things in YAML, we're somewhat restricted to representing a narrower variety of object classes in JSON. Here is an example of JSON configuration file:
+
+```JSON
+{
+  "table": {
+    "dealer": "Hit17",
+    "split": "NoResplitAces",
+    "decks": "6",
+    "limit": "50",
+    "payout": [3, 2]
+  },
+  "player": {
+    "play": "SomeStrategy",
+    "betting": "Flat",
+    "rounds": 100,
+    "stake": 50
+  },
+  "simulator":{
+    "samples": 100,
+    "outputfile": "data.dat"
+  }
+}
+```
+
+The JSON document looks like a dictionary of dictionaries; this is percisely the same object that will be built when we load this file. We can load a single configuration file using the following code:
+
+```Python
+import json
+config = json.load("config.json")
+```
+
+We can now use ```config['player']['play']``` in order to get to the strategy. Unlike INI files, we can easily encode ```tuple``` like a sequence of values. 
+
+Here's how we can use this nested structure:
+
+```Python
+import json
+from typing import Dict, Any
+
+config = json.load(open("config.json", "r"))
+
+
+def main_nested_dict(config: Dict[str, Any]) -> None:
+    dealer_nm = config.get("table", {}).get("dealer", "Hit17")
+    dealer_rule = {
+        "Hit17": Hit17(),
+        "Stand17": Stand17()
+    }.get(dealer_nm, Hit17())
+
+    split_nm = config.get("table", {}).get("split", "ReSplit")
+    split_rule = {
+        "ReSplit": ReSplit(),
+        "NoReSplit": NoReSplit(),
+        "NoReSplitAces": NoReSplitAces(),
+    }.get(split_nm, ReSplit())
+
+    decks = config.get("table", {}).get("decks", 6)
+    limit = config.get("table", {}).get("limit", 100)
+    payout = config.get("table", {}).get("payout", (3, 2))
+    table = Table(
+        decks=decks, limit=limit, dealer=dealer_rule, split=split_rule, payout=payout
+    )
+```
+
+## Using flattened JSON configurations
+
+> If we want to provide for defaults values by integrating multiple configuration files, we can't use both ```CinahMap``` and a nested dictionary-of-dictionaries like this. We have to either lfatten out our program's parameters or look at an alternative to merging the parameters from different sources.
+
+We can flatten out values by using a simple separator such as ```.``` in order to reflect a top-level section and a lower-level property withing the seciton:
+
+```JSON
+{
+  "player.betting": "Flat",
+  "player.play": "SomeStrategy",
+  "player.rounds": "100",
+  "player.stake": "50",
+  "simulator.outputfile": "data.dat",
+  "simulator.samples": 100,
+  "table.dealer": "Hit17",
+  "table.decks": "6",
+  "table.limit": "50",
+  "table.payout": "(3, 2)",
+  "table.split": "NoResplitAces"
+}
+```
+
+> This has the advantage of allowing us to use ```ChainMap``` to accumulate the configuration values from various sources. It also slightly simplifies the syntax to locate a particular parameter value. Given a list of configuration filenames, ```config_names```, we might do something like this:
+
+```Python
+config = ChainMap(*[json.load(file) for file in config_names])
+```
+
+## Storing the configuration in properties files
+
+```properties``` files are usually used in Java programs. There's no reason why we shouldn't use them in Python. They are easy to read an edit. Here's an example:
+
+```properties
+# Example Simulation Setup
+
+player.betting: Flat
+player.play: SomeStrategy
+player.rounds: 100
+player.stake: 50
+
+table.dealer: Hit17
+table.decks: 6
+table.limit: 50
+table.payout: (3, 2)
+table.split: NoReSplitAces
+
+simulator.outputfile= data.dat
+simulator.samples= 100
+```
+
+## Using XML files - PLIST and others
+
+Python's ```xml``` package includes numerous modules that parse the XML files. Because of the wide adoption of the XML files, it often becomes necessary to convert between XML documents and Python objects. Unlike JSON or YAML, the mapping from XML is not simple. 
+One common way to represent the configuration data in XML is the [PLIST file](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/PropertyLists/Introduction/Introduction.html).
+
+In order to load a PLIST file use ```plistlib```:
+
+```Python
+import plistlib
+
+print(plistlib.load(plist_file))
+```
+
+## Design considerations and trade-offs
+
+```>```
+
+Configuration file can simplify running application programs or starting servers. This can put relevant parameters in one easy-to-read and easy-to-modify file. We can put these files under the configuration control, track change histroy, and generally use them to improve the software's quality.
+
+Types of configuration files:
+
+* **INI files:** These files are easy to parse and are limited to strings and numbers.
+* **Python code ( PY files ):** We can use the main script for the configuration; in theis case, there will be no additional parsing and no limitations. We can also use ```exec()``` to process a separate file; this makes it trivial to parese and, again, there are no limitations.
+* **JSON** or **YAML** files: These files are easy to parse. They support strings, numbers, dicts, and lists. YAML can encode Python, but then why not just use Python?
+* **Properties files:** These files require a special parser. They are limited to strings.
+* **XML files:**
+    * **PLIST** files: These files are easy to parse. They support stirngs,n umbers, dicts, and lists.
+    * **Customized XML:** These files require a special parser.
+
+
+Viewed from the breadth of objects that can be represented, we have four broad categories of configuration files:
+
+* **Simple files with only strings:** Custom XML and properties files.
+* **Simple files with Python lietrals:** INI files.
+* **More complex files with Python literals, lists, and dicts:** JSON, YAML, PLIST and XML
+* **Anything that is Python:** We can use YAML for this, but it seems silly when Python has a clearer syntax than YAML. Providing configuration values through Python class definitions is very simple and leads to a pleasant hierarchy of default and override values.
+
+## Schema evolution
+
+```>```
+
+The configuration file is part of the publi-facing API. As application designers, we have to address the problem of schema evolution. If we change a class definition, how will we change the configuration?
+
+Because configuration files often have useful defaults, thye are often very flexible. In principle, the content is entirely optional.
+
+As a piece of software undergoes major version changes - change that alter the APIs or the databse schema - the configuration file too might undergo major changes. The configuration file's version number may have to be included in order to disambiguate legacy configuration parameters from current release parameters.
+
+For minor version changes, the configuration files, such as database, input and output files, and APIs, should remain compatible.
+
+A configuration file is a first-class input to an application. It's not an afterthought or a workaround. It must be as carefully designed as the other inputs and outputs.
+
+---
+---
+
+# Section 3
+
+---
+
+# 15. Design Principles and Patterns
+
+Read [this](https://github.com/DavidGugea/Develop-professionally-with-JavaScript) for SOLID design principles and design patterns.
+
