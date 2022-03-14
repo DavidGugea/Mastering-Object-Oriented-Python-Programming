@@ -49,6 +49,8 @@
 
 ## 19. Module and Package Design
 
+## 20. Quality and Documentation
+
 --- 
 ---
 
@@ -4844,3 +4846,910 @@ A configuration file is a first-class input to an application. It's not an after
 
 Read [this](https://github.com/DavidGugea/Develop-professionally-with-JavaScript) for SOLID design principles and design patterns.
 
+# 16. The Logging and Warning Modules
+
+## Creating a basic log
+
+Here are the first steps to creating a basic logger:
+
+1. Get a ```logging.Logger``` instance with the ```logging.getLogger()``` function; for example, ```logger=logging.GetLogger("demo")```.
+2. Create messages with that ```Logger```. There are a number of methods, with names such as ```warn()```, ```info()```, ```debug()```, ```error()``` and ```fatal()``` that create messages with different level of importance.
+
+The optional step is to configure the ```logggin``` module's handlers, filters and formatters. We can use ```logging.basicConfig()``` for this: ```logging.basicConfig(stream=sys.stderr, level=logging.INFO)```.
+
+```>```
+
+Instances of the ```Logger``` class are identified by a name attribute. The names are dot-separated strings that form a hierarchy. There's a root logger with the name "", the emtpy string. All other ```Logger``` instances are children of this root ```Logger``` instance. A complex application named ```foo``` might have an internal package named ```services``` with a module named ```persistence``` and a class named ```SQLStore```. This could lead to loggers named "", ```"foo"```, ```"foo.services"```, ```"foo.services.persistence"``` and ```"foo.services.persistence.SQLStore"```.
+
+***The best practice is to have a distinct logger for each of our classes or modules.*** 
+We might have a class that starts like this:
+
+```Python
+import logging
+
+
+class Player:
+    def __init__(self, bet: str, strategy: str, stake: int) -> None:
+        self.logger = logging.getLogger(self.__class__.__qualname__)
+        self.logger.debug(f"init bet {bet!r}, strategy ${strategy!r}, stake ${stake!r}")
+```
+
+We now have a class with a logger that is specificly used for that class and that class only.
+
+## Creating a class-level logger
+
+Creating a class-level logger can be done with a decorator. This will separat logger creation from the rest of the class which is a lot more maintainable and easy to read.
+
+Example:
+
+```Python
+from typing import Type
+import logging
+
+
+def logged(cls: Type) -> Type:
+    cls.logger = logging.getLogger(cls.__qualname__)
+    return cls
+
+
+@logged
+class Player:
+    def __init__(self, bet: str, strategy: str, stake: int) -> None:
+        self.logger.debug(f"init bet {bet!r}, strategy ${strategy!r}, stake ${stake!r}")
+```
+
+The problem with this design is that ```mypy``` is unable to detect the presence of the ```logger``` instance variable. We could create a class-attribute for the logger:
+
+```Python
+class Player:
+    logger = logging.getLogger("Player")
+
+    def __init__(self, bet: str, strategy: str, stake: int) -> None:
+        self.logger.debug(f"init bet {bet!r}, strategy ${strategy!r}, stake ${stake!r}")
+```
+
+The problem with this design is that it doesn't respect the ***DRY*** principle. The class name is repeated within the class-level logger creation.
+
+We can use the following design to build a consistent logging attribute in a varierty of related classes:
+
+```Python
+import logging
+
+
+class LoggedClassMeta(type):
+    def __new__(cls, name, bases, namespace, **kwargs):
+        result = type.__new__(cls, name, bases, dict(namespace))
+        result.logger = logging.getLogger(result.__qualname__)
+
+        return result
+
+
+class LoggedClass(metaclass=LoggedClassMeta):
+    logger: logging.Logger
+
+
+class Player(LoggedClass):
+    def __init__(self, bet: str, strategy: str, stake: int) -> None:
+        self.logger.debug(f"init bet {bet!r}, strategy ${strategy!r}, stake ${stake!r}")
+
+```
+
+## Configuring loggers
+
+There are the following two configuration details that we need to provide in order to see the output in our logs:
+
+* The logger we're using needs to be associated with at least one handler that produces conspicuous output.
+* The handler needs a logging level that will pass our logging messages
+
+The ```logging.basicConfg()``` method permits a few parameters to create a single ```logging.handlers.StreamHandler``` for logging the output. Example:
+
+```Python
+>>> import loggin
+>>> import sys
+>>> logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
+```
+
+## Starting up and shutting down the logging system
+
+Because of the decentralized nature of logging, it's best to configure it only once, at the top level of an application. We should configure ```logging``` inside the ```if __name__ == "__main__"``` portion of a an application.
+
+Many of our logging handlers involve buffering. For the most part, data will be flushed from the buffers in the normal course of events. While we can ignore how logging shuts down, it's slightly more reliable to use ```logging.shutdown()``` to be sure that all of the buffers are flushed to the devices.
+
+An example:
+
+```Python
+import sys
+import yaml
+import logging
+
+if __name__ == '__main__':
+    logging.config.dictConfig(yaml.load("log_config.yaml"))
+
+    try:
+        application = Main()
+        status = application.run()
+    except Exception as e:
+        logging.exception(e)
+        status = 1
+    finally:
+        logging.shutdown()
+
+    sys.exit(status)
+```
+
+We have configured the ```logging``` part of our application at the start and used a ```try/except/finally``` clause in order to properly manage our logger. 
+
+At the start of the ```if __name__ == "__main__"``` statement, we configured ```logging``` using ```logging.config``` by using the ```dictConfg()``` method that loads up a configuration file.
+
+## Naming loggers
+
+There are four common use cases for using ```logging.getLogger()``` to name our ```Loggers```. We often pick names to parallel our application's architecture, as described in the following examples:
+
+* **Module names:** We might have a module global ```Logger``` instance for modules that contain a large number of small functions or classe sfor which a large numbero f objects are created. When we extend ```tuple```, for example, we don't want a reference to ```Logger``` in each instance. We'll often do this globally, and usually close to the front of the module:
+
+```Python
+import logging
+logger = logging.getLogger(__name__)
+```
+
+* **Object instances:** This was shown previously, when we created ```Logger``` in the ```__init__()``` method. This ```Logger``` wil be unique to the instance; using only a qualified class name might be misleading, because there will be mulitple instances of the class. A better design is to incldeu a unique instance identifier in the loggger's name, as follows:
+
+```Python
+def __init__(self, player_name):
+    self.name = player_name
+    self.logger = logging.getLogger(
+        f"{self.__class__.__qualname__}.{player_name}"
+    )
+```
+
+* **Class names:** This was shown previously, when we defined a simple decorator. We can use ```__class__.__qualname__``` as the ```Logger``` name and assign ```Logger``` to the class as a whole. It will be shared by all instnaces of the class.
+
+* **Funciton names:** For small functions that are used frequently, we'll often use a module-level log, as shown previously. For larger functions that are rarely used, we might create a log within the function, as follows:
+
+```Python
+def main():
+    log = logging.getLogger("main")
+```
+
+> In some cases, however, we mmight have a more compelx collection of ```Loggers```. We might have several distinct types of informational messages from a class. Two common examples are financial audit logs and security access logs. We might want seeveral parallel hierarchies of ```Loggers```; one with names that start with ```audit.`` and another with names that astart with ```security```. A class might ahve more specialized ```Lgogers```, with names such as ```audit.module.Class``` or ```security.module.Class```, as shown in the following example:
+
+```Python
+self.audit_log = loggin.getLogger(f"audit.{self.__class__.__qualname__})")
+```
+
+
+Having multiple logger objects available in a class allows us to finely control the kinds of output.
+
+## Extending logger levels
+
+Loggers can have different levels. Each level has a certain value and they're categorized by importance:
+
+|Logging module variable|Value|
+|--|--|
+|```DEBUG```|10|
+|```INFO```|20|
+|```WARNING``` or ```WARN```|30|
+|```ERROR```|40|
+|```CRITICAL``` or ```FATAL```|50|
+
+We can add additional arbitrary level:
+
+```Python
+logging.addLevelName(15, "VERBOSE")
+logging.VERBOSE = 15
+```
+
+Example of how to use this:
+
+```self.logger.log(logging.VERBOSE, "Some Message")```
+
+## Defining handlers for multiple destinations
+
+We have several use cases for sending the log output to multiple destinations:
+
+* We might want duplicate lgos to improve the reliability of operations
+* We might be using sophisticated ```Filter``` objects to create distinct subsets of messages.
+* We might have different levels for each destination. We can use the debugging level to separate debugging messages from informational messages.
+
+In order to create multipe destinations, we must create multiple ```Handler``` instances. Each ```Handler``` might ocntaina a customized ```Formatter```; it could contain an optional elvel, and an optional list of filters that can be applied. Once we have multiple ```Handler``` instances, we bind one or more ```Logger``` objects to the desired ```Handler``` instances. A ```Handler``` object can have a level filter. Using this, we can have multiple handler instances; each can have a different filter to show different groups of messages based on the level. Also, we can explicitly create ```Filter``` objects if we need even more sophisticated filtering than the built-in filters, which only ckech the severity level.
+
+> While we can configure this through the ```logging``` module API, it's often more clear to define tmost of the logging details in a separate configurations file. One elegan way to handle this is to use YAML notation for a configuration dictionary. We can then load the dictioanry with a relatively straightforward use of ```logging.config.dictConfig(yaml.load(somefile))```.
+
+Example of such a YAML file:
+
+```YAML
+version: 1
+handlers:
+  console:
+    class: logging.StreamHandler
+    stream: ext://sys.stderr
+    formatter: basic
+  audit_file:
+      class: logging.FileHandler
+      filename: data/test.log
+      encoding: utf-8
+      formatter: basic
+formatters:
+  basic:
+    style: "{"
+    format: "{levelname:s}:{name:s}:{message:s}"
+loggers:
+  verbose:
+    handlers: [console]
+    level: INFO
+```
+
+## Managing propagation rules
+
+```>```
+
+The default behavior for ```Loggers``` is for a logging record to propagate from the named ```Logger``` up through all parent-level ```Logger``` instances to the root ```Logger``` instance. We may have lower-level ```Loggers``` that have special behaviors and a root ```Logger``` that defines the default bheavior for all ```Loggers```.
+
+Because logging grecords propagate, a root-level logger will *also* handle any log records from the lower-level ```Loggers``` that we define. If child loggers allow propagation, this will lead to duplicated output: first, there will be output from the child, and then the output when the log record propagates to the parent. If we want to avoid duplication we must turn the propagation off for lower-level loggers when there are handlers on several levels.
+
+Here's a modification to the configuration file:
+
+```YAML
+version: 1
+handlers:
+  console:
+    class: logging.StreamHandler
+    stream: ext://sys.stderr
+    formatter: basic
+  audit_file:
+    class: logging.FileHandler
+    filename: data/test.log
+    encoding: utf-8
+    formatter: basic
+formatters:
+  basic:
+    style: "{"
+    format: "{levelname:s}:{name:s}:{message:s}"
+loggers:
+  verbose:
+    handlers: [console]
+    level: INFO
+    propagate: False # Added
+  audit:
+    handlers: [audit_file]
+    level: INFO
+    propagate: False # Added
+root:
+  handlers: [console]
+  level: INFO
+```
+
+## Specialized logging for control, debugging, audit and security
+
+There are many kinds of logging; we'll focus on these four varieties:
+
+* **Errors and Control:** Basci errors and the control of an application leads to a main log that helps users confirm that the program really is doing what it's supposed to do. This would include enough error information with which users can correct their problems and rerun the application. If a user enables verbose logging, it will amplify this main error and control the log with additional user-friendly details.
+* **Debugging:** This is used by develoeprs and maintainers; it can include rather complex implementation details. We'll rarely want to enable *blanket* debugging, but will often enable debugging for specific modules or classes.
+* **Audit:** This is a formal confirmation that tracks the transformations applied to data so that we can be sure that processing was done correctly.
+* **Security:** This can be used to show us who has been authenticated; it can help confirm that the authorization rules are being followed. It can also be used to detect some kinds of attacks that involve repeated password failures.
+
+## Creating audit and security logs
+
+Audit and security logs are often duplicated beteween two handlers: the main control handler and a file handler that is used for audit and security reviews. This means that we'll do the following things:
+
+* Define additional loggers for audit and security
+* Define multiple handlers for these loggers
+* Optionally, define additional formats for the audit handler
+
+We'll often create separate hierarchies of the ```audit``` and ```security``` logs.
+
+Here's an extension to the metaclass ```LoggedClassMeta```. This new metaclass will build a class that includes an ordinary control or debugging loggers as well as a special auditing logger:
+
+```Python
+import logging
+
+
+class LoggedClassMeta(type):
+    def __new__(cls, name, bases, namespace, **kwargs):
+        result = type.__new__(cls, name, bases, dict(namespace))
+        result.logger = logging.getLogger(result.__qualname__)
+
+        return result
+
+
+class LoggedClass(metaclass=LoggedClassMeta):
+    logger: logging.Logger
+
+
+class AuditedClassMeta(LoggedClassMeta):
+    def __new__(cls, name, bases, namespace, **kwargs):
+        result = LoggedClassMeta.__new__(cls, name, bases, dict(namespace))
+        for item, type_ref in result.__annotations__.items():
+            if issubclass(type_ref, logging.Logger):
+                prefix = "" if item == "logger" else f"{item}."
+                logger = logging.getLogger(f"{prefix}{result.__qualname__}")
+                setattr(result, item, logger)
+
+            return result
+
+
+class AuditedClass(LoggedClass, metaclass=AuditedClassMeta):
+    audit: logging.Logger
+    pass
+```
+
+Example of how it is used:
+
+```Python
+class Table(AuditedClass):
+    def bet(self, bet: str, amount: int) -> None:
+        self.logger.info(f"Betting {amount} on {bet}")
+        self.audit.info(f"Bet:{bet!r}, Amount:{amount!r}")
+```
+
+```>```
+
+The ```AuditedClassMeta``` definition extends ```LoggedClassMeta```. The base metaclass initialized the logged attribute with a specific logger instance based on the class name. This extension does something similar. It looks for all type annotations that reference the ```logging.Logger``` type. All of these references are automatically initialized with a class-level logger with a name based on the attribute name and the qualified class name. This lets us build an audit logger or some other speciazlied logger with nothing more than a type annotation.
+
+The ```AuditedClass``` definition extends the ```LoggedClas``` definition to provide a definition for a ```logger``` attribute of the class. This class adds the ```audit``` attribute to the class. Any subclass will be created with two loggers. One logger has a name simply based on the qualified name of the calss. The other logger uses the qualified name, but wiht a prefix that puts it in the ```audit``` hierarchy.
+
+## Using the warnings module
+
+One of the tools that we can use to support hte design evolution is the ```warnings``` module. There are the following two clear use cases for ```warnings``` and one fuzzy use case:
+
+* Warnings should be used to alert developers of API changes; usually, features that are deprecated or pending deprecation. Deprecation and pending deprecation warnings are silent by default. These messages are not silent when running the ```unittest``` module; this helps us ensure that we're making proper use of upgraded library packages.
+* Warnings should alert users about a configuraiton problem. For example, there might be several alternative implementations of a module; when the preferred implementation is not available, we might want to provide a warning that an optimal implementation is not being used.
+* We might push the edge of the envelope by using warnings to alert users that the results of the computation may have a problem. From outside the Python environment, one definition of a warnings says, *...indicate that the service might hav performed some, but not all, of the requested functions*. This idea of an *incomplete* result leading to a warning is open to dispute: it may be better to produce no result rather than a *potentially* incomplete result.
+
+For the fiirst two  use casses, we'll offten use Python's ```warnings``` module to show you that there are correctable problems. For the thidr blurry use case, we might use the ```logger.warn()``` method to alert the user about the potential issues. We shouldn't rely on the ```warnings``` module for this, because the default behavior is to show a warning just once.
+
+**The value of the ```warnings``` module is to provide messages that are optional and aimed at optimizations, compatibility and a small set of runtime questions. The use of experimental features of a complex library or package, for example, might lead to a warning.
+
+## Showing API changes with a warning
+
+Here's how to show a simple warning that some method is deprecated:
+
+```Python
+import warnings
+
+
+class Player:
+    """version 2.1"""
+
+
+    def bet(self) -> None:
+        warnings.warn(
+            "bet is deprecated, use place_bet", DeprecationWarning, stacklevel=2
+        )
+
+        pass
+```
+
+The three ways to make the warnings visibile in applications:
+
+* The command-line ```-Wd``` option will set the action to ```default``` for all warnings. This will enable the nroamlly silent deprecation warnings.
+* Using ```unittest```, which alwyas execute in the ```warnings.simplefilter('default') mode.
+* Including ```warnings.simplefilter('default')``` in our application program. This will also apply the ```default``` action to all warnings; it's equaivalent to the ```-Wd``` command-line option.
+
+## Showing possible software problems with a warning
+
+The idea of showing warnings to end-users is a bit nebulous. The user doesn't necessarily know if the program works or it doesn't.
+
+***A program should either work correctly or it should not work at all.***
+
+## Advanced logging - the last few messages and network destinations
+
+Two advanced techniques that help provide useful debugging information:
+
+* The **log tail:** this is a buffer of the last few log messgaes before some significant event. The idea is to have a small file that can be read to show why an application died. 
+* **Sending log messages through a centralized log-handling service:** This can be used to consolidate logs from a number of parallel web servers. We need to create both senders and receivers for the logs
+
+## Building an automatic tail buffer
+
+```>```
+
+The log tail buffer is an extension to the ```logging``` framework. We're going toe xtend ```MemoryHandler``` to slightly alter its behavior. The built-ni behavior for ```MemoryHandler``` includes three use cases for writing - it will write to another ```handler``` when the capacity is reached; it will write any buffered messages when ```logging``` shuts down; most importantly, it will write the entire buffer when a message of a given level is logged.
+
+Here's an example of a ```TailHandler```:
+
+```Python
+import logging.handlers
+
+
+class TailHandler(logging.handlers.MemoryHandler):
+    def shouldFlush(self, record: logging.LogRecord) -> bool:
+        """
+        Check for buffer full or a record at the flushLevel or higher.
+        """
+
+        if record.levelno >= self.flushLevel:
+            return True
+
+        while len(self.buffer) > self.capacity:
+            self.acquire()
+            try:
+                del self.buffer[0]
+            finally:
+                self.release()
+
+            return False
+```
+
+## Sending logging messages to a remote process
+
+```>```
+
+One high-performance design patterns it ohave a cluster of processes that are being used to solve a single problem. We might have an application that is spread across multiple application servers or multiple database clients. For this kind of architecture, we often want a centralized log among all of the various processes.
+
+One technique for creating a unified log is to include accurate timestamps and then sort recors from separate log file into a single, unified log. This sorting and merging is extra processing that can be avoided. Another, more responsive technique is to send log messages from a number of concurrent producer processes to a single consumer process.
+
+The following is the three-step process to build a multiprocessing application:
+
+* Firstly, we'll create a queue object shread by producers and consumers.
+* Secondly, we'll create the consumer process, which gets the logging records from the queue. The logging consumer can apply filters to the messages and write them to a unified file.
+* Thirdly, we'll create the pool of producer processes that do the real work of our application and produce logging records in the queue they share with the consumer.
+
+## Preventing queue overrun
+
+The default behavior of the logging module puts messages into the queu with the ```Queue.put_nowait()``` method. The advantage of this is that it allows the producers to run without the delays associated with logging. The disadvantage of this is that messages will get lost if the queue is too small to handle a very large burst of logging message.
+
+We have the following two choices to gracefully handle a burst of messages:
+
+* We can switch from ```Queue``` to ```SimpleQueue.SimpleQueue``` since it has an indefinite size. As it has a sligthly different API, we'll need to extend ```QueueHandler``` to use ```Queue.put()``` instead of ```Queue.put_nowait()```.
+
+* We can slow down the prodcuer in the rare case that the queue is full. This is a small change to ```QueueHandler``` to use ```Queue.put()``` instead of ```Queue.put_nowait()```.
+
+# 17. Designing for Testability
+
+Future books on this topic.
+
+
+# 18. Coping with the Command Line
+
+
+## The OS interface and the command line
+
+Generally, the operating system's shell starts applications with several pieces of information that constitute hte OS API:
+
+* The shell provides each application with its collection of environment variables. In Python, these are accessed through ```os.environ```.
+* The shell prepares three standard files. In Python, these are mapped to ```sys.stdin```, ```sys.stdout``` and ```sys.stderr```. There are some other modules, such as ```fileinput```, that can provide access to ```sys.stdin```.
+* The command line is parse by the shell into words. Parts of the command line are available in ```sys.argv```. For POSIX operating systems, the shell may replace shell environemtn variables and global wildcard filenames. In Windows, the simple ```cmd.exe``` shell will not glob filenames for us.
+* The OS also maintains context settings, such as the current working directory, user identity and user group information, among many other things. These are available through the ```os``` module. They aren't provided as arguments on the command line.
+
+```>```
+
+The OS expects an application to provide a numeric status code when it terminates. If we want to return a specific numeric code, we can use ```sys.exti()``` in our applications. The ```os``` module define a number of values, such as ```os.EX_OK```, to help return codes with common meanings. Python will return a zero if our program is terminated normally, a value of one if the program ended with an unhandled exception and a value of two if the command-line arguments were invalid.
+
+The shells' operation is an important part of this OS API. Given a line of input, the shell performs a number of substitutions, depending on the (rather compelx) qutoting rules and substitution options. It then parses the resulting line into space-delimited words. The first word must be either a built-in shell command ( such as ```cd``` or ```set``` ) or it must be the name of a file, such as ```python3```. The shell searches its defined ```PATH``` for this file.
+
+The first bytes of an executable file have a magic number that is used by the shell to decide how to execute that file. Some magic numbers indicate that the file is a binary executable; the shell can fork a subshell and execute it. Other magic numbers, specifically the value encoded by two bytes ```b'#!'```, indicate that the file is a proper text script and requires an interpreter. The rest of the first line of this kind of file is the name of the interpreter.
+
+We often use a line like the follow in a Python file:
+
+```#!/usr/bin/env python3```
+
+If the Python file has permission to execute, and has this as the first line, then the shell will run the ```env``` program. The ```env``` program's argument ( ```python3``` ) will cause it to set up an environemtn and run the Python 3 program with the Python file as the first positional argument.
+
+After setting the ```PATH``` correctly, what happens when we enter ```test.py -s someinput.csv``` at the command line? The sequence of steps that the program works through from the OS shell via an executable script to Python looks like the following:
+
+1. The shell parser the ```test.py -s someinput.csv``` line. The first word is ```test.py```. This file is on the shell's ```PATH``` and has the x executable permission. The shell opens the file and finds the ```#!``` bytes. The shell reads the rest of this line and finds the ```/usr/bin/env python3``` command.
+2. The shell parser the new ```/usr/bin/env``` command, which is a binary executable. The shell starts the ```env``` program. This program, in turn, starts ```python3```. This sequence of words from the original command line, as parse by the shell ```['test.py', '-s', 'someinput.csv']```, is provided to Python.
+3. Python will extract any *options* that are prior to the first *argument*. Options are distinguished from arguments by having a leading hyphen, -. These first options are used by Python during startup. In this example, there are no options. The first argument must be the Python filename that is to be run. Thsi filename argument and all of the remaining words on the line will be assigned to ```sys.argv```.
+4. The Python startup is based on the options founds. Depending on the ```-s``` option, the ```site``` module may be used to set up the import path, ```sys.path```. If we used the ```-m``` option, the Python will use the ```runpy``` module to start our application. The given script files may be (re)compiled to byte code. The ```-v``` option will expose the imports that are being performed.
+5. Our application can make use of ```sys.argv``` to parse options and argum ents with the ```argparse``` module. Our applcication can use environemnt variables in ```os.environ```.
+
+If there is no filename, the Python interpreter will read from standard input. If the starad input is a console ( called a TTY, in Linux parlance ), then Python will enter a **read-execute-print loop ( REPL )** and display the ```>>>``` prompt. While we use this mode as developers, we don't generally make use of this mdoe for a finished application.
+
+## Arguments and options
+
+In order to run programs, the shell parses a command line into words. The words can be understood as a mixture of *options* and *arguments*. The following are some essential guidelines:
+
+* ***Options come first. They are preceded by ```-``` or ```--```.*** There are two formats: ```-l``` and ```--word```. There are two species of options: options with no arguments and options with arguments. A couple of examples of options without arguments involve using ```-v``` to show a version or using ```--version``` to show the version. An example of an option with arguments is ```-m module```, where the ```-m``` option must be followed by a module name.
+* ***Short format ( single-letter )***  optionswith no arguments ca be grouped behing a single ```-```. We might use ```-bqv``` to combine the ```-b``` ```-q``` ```-v``` optiosn for convenience.
+* Generally, arguments come after options, and they don't have a leading ```-``` or ```--``` ( altough some Linux applications break this rule ). There are two common kinds of arguments:
+    * ***Positional arguments, where the order is semantically significant.*** We might ave two positional arguments: an input filename and an output filename. The order matters because the output file will be modified. When files will be overwritten, simply distinguishing by position needs to be done carefully to prevent confusin. The ```cp```, ```mv``` and ```ln``` commands are rare examples of positional arguments where the order matters. it's sligthly more clera to use an option to specify the output file - for example ```-o output.csv```.
+    * **A list of arguments, all of which are semantically equivalent.*** We might ahve arguments that are all the names of input files This fits nicely with the way the shell performs filename globing. When we say ```process.py *.html```, the ```*.html``` command is expanded by the shell to filenames that become the positional parameters ( This doesn't work in Windows, so the ```glob``` module must be used )
+
+## Using the ```pathlib``` module
+
+Here are some examples of building a ```Path``` object:
+
+* ```Path.home() / "file.dat"```: this namees a given file in the user's home directory.
+* ```Path.cwd() / "data" / "data.csv"```: This names a file relative to the current working directory.
+* ```Path("/etc") / "profile"```: This names a file starting from the root of the filesystem.
+
+We can also decompose the ```Path``` object however we like:
+
+```Python
+>>> p = Path.cwd() / "data / "data.csv"
+>>> p.parent
+PosixPath('/Users/user/folder/data/')
+>>> p.name
+'data.csv'
+>>> p.suffix
+'.csv'
+>> p.exists()
+False
+```
+
+We can also search for certain types of files inside a ```Path``` object. We can search for example for files that end in ```.json```:
+
+```Python
+>>> results = p.with_suffix('.json)
+>>> results
+PosixPath('Users/user/folder/data/data.json')
+```
+
+We can also use the ```Path``` object to open up a directory/file by using it as a context manager:
+
+```Python
+output = Path("directory") / "file.dat"
+with output.open("w") as output_file:
+    output_file.write("sample data\n")
+```
+
+The ```Path``` object can also be used to build directories:
+
+```Python
+>>> target = Path("data") / "directory1"
+>>> target.mkdir(exist_ok=True, parents=True)
+```
+
+## Parsing the command line with argparse
+
+The general approach to using ```argparse``` involves the following four steps:
+
+1. First, we create an ```ArgumentParser``` instance. We can provide this object with overall informatino abuot the command-line interface. This might include a description, format changes for the displayed options and arguments, and wheter or not ```-h``` is the ```help``` option. Generally, we only need to pprovide the description; the rest of the options have sensible defautls.
+2. Then, we define the command-line options and arguments. This is done by adding arguments with the ```ArgumentParser.add_argument()``` method function.
+3. Next, we parse the ```sys.argv``` command line to create a ```namespace``` object that details the options, option arguments and overall command-line arguments.
+4. Lastly, we use the ```namespace``` object to configure the application and process the arguments. There are a number of alternative approaches to handle this greaceuflly. This may involve parsing configuration files as well as command-line options. We'll look at several designs in this seciton.
+
+We can create a parser like this:
+
+```Python
+parser = argparse.ArgumentParser(description="This is an argument parser")
+```
+
+Here are some common patterns to define the command-line API for an application:
+
+* **A simple on-off option:** We'll often see this as a ```-v``` or ```-verbose``` option.
+* **An option with an argument:** This might be a ```-s``` ',' or ```-separator``` ```|``` option.
+* **Any positional argument:** This might be used when we have an input file and an output file as command-line arguments. This is rare, and shoulbe avoided because it's never perfectly clear what the order should be.
+* **All other arguments:** We'd use these when we have a list of input files.
+* ```--version```: This is a special option to display the version number and exit.
+* ```--help```: This option will display help and exit. This is a default, and so we don't need to do anything to make this happen.
+
+Once the arguments have been defined, we can parse them and use them. Here's how we parse them:
+
+```Python
+config = parser.parse_args()
+```
+
+The ```config``` object is an ```argparse.Namespace``` object; the class is similar to ```types.SimpleNamespace```. It will have a number of attributes, and we can easily add more attribute to this object.
+
+## A simple-on-off option
+
+Here's how to build an on-off option:
+
+```Python
+parser.add_argument('-v', '--verbose', action='store_true', default=False)
+```
+
+This will define the long and short versions of the command-line option. If the option is present, the action will set the ```verbose``` option to ```True```. If the option is absent, the ```verbose``` option will default to ```False```.
+
+## An option with an argument
+
+We'll define an option that has an argument with the long and optional short name. We'll provide an action that stores the value provided with the argument. 
+
+Example:
+
+```Python
+# option with an argument
+parser.add_argument(
+    "-b", "--bet", action="store", default="Flat",
+    choices=["Flat", "Martingale", "OneThreeTwoSix"],
+    dest="betting_rule"
+)
+parser.add_argument(
+    "-s", "--stake", action="store", default=50, type=int
+)
+```
+
+In some cases, tehre may be alist of values associated with the argument. In this case, we may provide a ```nargs="+"``` option to collect multiple values separated by space in a list.
+
+## Positional arguments
+
+
+We define positional arguments using a name with no ```-``` decoration. In a case where we have a fixed number of positional arguments, we'll add them approriately to the parser:
+
+```Python
+parser.add_argument("input_filename", action="store")
+parser.add_argument("output_filename", action="store")
+```
+
+When parsing argument values, the two positional argument strings will be stored in the final namespace object. we can use ```config.input_filename``` and ```config.output_filename``` to work with these argument values.
+
+***Avoid defining commands where the exact order of arguments is significant.***
+
+## All other arguments
+
+If the rule if one or more argument values, we specify ```nargs="+"```. If the rule is zero or more argument values, we specify ```nargs="*"```, as shown in the following code. If hte rule is *optional*, we specify ```nargs="?"```. This will collect all other argument values into a single sequence in the resulting namespace:
+
+```Python
+parse.add_argument("filenames", action="store", nargs="*", metavar="file...")
+```
+
+## Integrating command-line options and environment variables
+
+```>```
+
+The general policy for environment variables is to provide configuration inputs, similar to command-line options and arguments. For the most part, we use environment variables for settings that rarely change. We'll oftne set them via the ```.basrc``` or ```.bash_profile``` files so that the values are set every time we log in. We may set the environment variables more globally in an ```/etc/bashrc/``` file so that thye apply to all users. We can also set environment variables on the command line, but these settings only apply to the progrma being run.
+
+On some cases, all of our configuration settings can be provided on the command line. In this case, the environment variables could be used as a kind of backup syntax for slowly changing variables.
+
+We can leverage environment variables to set the default values in a configuration object. We watn to gather these values prior to parsing the command-line arguments. This way, command-line arguments can override environment variables. There are two common approaches to this:
+
+* **Explicitly setting the values when defining the command-line options:** This has the advantage of making the default value show up in the help message. It only works for environment variables that overlap with command-line options. We might do something like the followig to use the ```SIM_SAMPLES``` environment variable to provide a default value that can be overridden:
+
+```Python
+parser.add_argument(
+    "--samples",
+    action="store",
+    default=int(os.environ.get("SIM-SAMPLES", 100)),
+    type=int,
+    help="Samples to generate"
+)
+```
+
+* **Implicitly setting the values as aprt of the parsing process:** This makes it simple to merge environment variables with command-line options into a single configuration. We can populate a namespace with default values and then overwrite it with the parsed values from the command line. This provides us with three levels of option values: the default define in the parser, an override values seeded into the namespace, and finally, any override value provided on the command line, as shown in the following code:
+
+```Python
+config = argparse.Namespace()
+config.samples = int(os.environ.get("SIM_SAMPLES", 100))
+config_x = parser.parse_args(sys.argv[1:], namespace=config)
+```
+
+The argument parser can perform type conversions for values that are nto simple strings. However, gathering environment variable sdoesn't automatically involve a type conversin. For options that have non-string values, we must perform the type conversion in our application.
+
+## Providing more configurable defaults
+
+We can incorporate configuration files along with environment variables and the command-line options. This gives us thre ways to provide a configuration to an application program:
+
+* A hierarchy of configuration files can provide default values.
+* Environment variables can provide overrides to the configuration files. This may mean translating from an environment variable namespace to the configuration namespace.
+* The command-line options define the final overrides.
+
+Using all three may e too much of a good thing. Tracking down a setting can become difficult if there are too many places to search. The final decision about the configuration often rests on staying consistent with the overall collection of applications and frameworks. We should strive to make our programming fit seamlessly with other components.
+
+## Overriding configuration file settings with environment variables
+
+We'll use a three-stage process to incorporate environment variables. For htis application, the environment variables will be used to voerride configuration file settings. **The first stage** is to gather the default values from the various files:
+
+```Python
+config_locations = (
+    Path.cwd(),
+    Path.home(),
+    Path.cwd() / "opt",
+    Path(__file__) / "config"
+)
+
+candidate_paths = (dir / "config.yaml" for dir in config_locations)
+config_paths = (path for path in candidate_paths if path.exists())
+files_values = [yaml.load(str(path)) for path in config_paths]
+```
+
+The final result in ```files_values``` is a sequence of configuration values taken from the fiels that are found to exist. Each file should create a dictionary that maps parameter names to parameter values. This list can be used as part of a final ```ChainMap``` object.
+
+**The second stage** is to build the user's environment-based settings. We can use code like the following to set this up:
+
+```Python
+env_settings = [
+    ("samples", nint(os.environ.get("SIM_SAMPLES", None))),
+    ("stake", nint(os.environ.get("SIM_STAKE", None))),
+    ("rounds", nint(os.environ.get("SIM_ROUNDS", None))),
+]
+
+env_values = {
+    k: v
+    for k,v in env_settings 
+    if v is not None
+}
+```
+
+Given a number of dictionaries, we can use ```ChainMap``` to combine them, as shown in the following code:
+
+```Python
+defaults = argparse.Namespace(
+    **ChainMap(
+        env_values,  # Checks here first
+        *files_values  # All the files, in order
+    )
+)
+```
+
+## Design considerations and trade-offs
+
+The command-line API is an important part of a finish application. While most of our design effort focuses on what the program does while it's running, we do need to address two boundary states: startup and shutdown. An application must be easy to configure when we start it up. It must also shut down gracefullyk, properly flushing all of the output buffers and releasing all of the OS resources.
+
+When working with a public-facing API, we have to address a variation on the problem of schema evolution. As our application evolves-and as our knowledge of the users evolves- we will modify the command-line API. This may mean taht we'll have legacy feature or legacy syntax. It may also mean that we need to break the compatibility with the legacy command-line design.
+
+In many cases, we'll need to be sure that the major version number is part of our application's name. We shouldn't write a top-level module named ```someapp```. When we need to make major release three, which is incompatible with major release two, we may find it awkward to explain that the name of the application has change to ```someapp3```. We should consider starting with ```someapp1``` so that the number is alwyas part of the application name.
+
+
+## 19. Module and Package Design
+
+Anytime we're creating a Python file, we're creating a module. As our application gets bigger nad ibgger, the use of packages becomes inevitable and their maintance too. We must be able to have clear, organized packages.
+
+Some languages encourge putting a insgle class in a single filee; this rule doesn't apply to Python. The Pythonic practice is to treat a whole module as a unit of reuse; it's common practice to have many closely-related class and function definitions in a single module.
+
+One common approach is a single module. The overall organization can be imagined this way:
+
+```
+module.py
+|
+------- class A:
+            def method(self):...
+|
+------- class B:
+            def method(self):...
+|
+--------def function():...
+```
+
+A more complex approach is a package of modules, which can be imaged as follows:
+
+```
+package
+|
+------- __init__.py
+------- module1.py
+-------------- class A:
+                   def method(self):...
+               def function(): ...
+------- module2.py
+```
+
+This example shows a single package with two modules. Each module contains classes and functions.
+
+## Designing a module
+
+The module is a collection of classes; it is a higher-level grouping of related classes and functions. It's rare to try to reuse a single class in isolation.
+
+Consequently, the module is a fundamental component of Python implementation and reuse. A properly designed module can be reused because the needed classes and functions are bundled together. All Python programming is provided at the module level.
+
+A Python module is a file. The filename extensions must be ```.py```. The filename in front of ```.py``` must be a valid Python name.
+
+The Python runtime may also create additional ``.pyc``` and ```.pyo``` files for its own private purposes; it's best to simply ignore these files. GEnerally, they're cached copies of code objects used to reduce the time to load a module. These files should be ignored.
+
+Every time we create a ```.py``` file, we create a module. Often, we'll create Python files without doing much design work. This simplicity is a benefit of using Python. In this chatper, we'll take a look at some of the design considerations to create a reusable module.
+
+## Some module design patterns
+
+There are three commonly seen design patterns for Python modules:
+
+* **Importable library modules:** Tehse are meant to be imported. They contain definitions of classes, functions and perhpas some assignment statements to create a few global variables. They do not do any real work; they can be imported without any worry about the side effects of the import operation. There are two use cases that we'll look at:
+    * **Whole module:** Some modules are designed to be imported as a whole, creating a module namespace that contains all of the items.
+    * **Item collection:** Some modules are designed to allow individual items to be imported, instaed of creating a module object; the ```math``` module is a prime example of this design.
+* **Runnable script modules:** These are meant to be executed from the command line. They contain more than class and function definitions. A script will include statements to do real work. The presence of side effects means they cannot be meaningfully imported.
+* **Conditional Script modules:** These modules are hybridgs of the two aforementioned use cases: they can be imported and they can also be run from the command line.
+
+***Importing a module should have few side effects.***
+
+Creating a few module-level variables is an acceptable side effect of an import. The real work - accessing network resources, printing output, updating files and other kinds of processing - ***should not happend when a module is being imported.***
+
+A main script module without a ```__name__ == "__main__"``` section is often a bad idea because it can't be imported and reused. Beyond that, it's difficult for documentation tools to work with a main script module, and it's difficult to test. The documentation tools tend to import modules, causing work to be done unexpectedly. Similarly, testing requires care to avoid improting the module as part of a test setup.
+
+## Modules compared with classes
+
+There are numerous parallels between the definitions for modules and classes:
+
+* Both modules and classes have names defined by the Python syntax rules. To help distinguish them, modules usually have a leading lowercase letter; classes usually have a leading uppercase letter.
+* Module and class definitions are namespace that contain other objects.
+* A module is a **Singleton** object within a global namespace, ```sys.modules```. A calss definition is unique within a namespace, either the global namespace, ```__main__``` or some local namespace. A class definition is slightly different from a module **Singleton** because a class definition can be replaced. Once imported a module can't be imported again without using special functions such as ```importlib.reload()```.
+
+## The expected content of a module
+
+Python modules have a typical organization. To an extent, this is defined by [PEP 8](https://peps.python.org/pep-0008/).
+
+The first line of a module can be ```#!``` comment; a typical version looks like the following code:
+
+```Python
+#!usr/bin/env python3
+```
+
+This is used to help OS tools, such as ```bash```, locate the Python interpreter for an executable script file. For Windows, this line may be something along the lines of ```#!C:\Python3\python.exe```
+
+The next lines of a module should be a triple-quoted module docstring that define the contest of the module file.As with ohter Python docstinrgs, the first paragraph of the text should be a summary. This should be followed by a more complete definition of the module's contents, purpose and usage. 
+
+This is a module global variable that we might use elsewhere in our application to determine the version number of the module. 
+
+After the ```import``` statements, come the various class and function definitions of the module. These are presentedi nwhatever order is reuqired to ensure that they work correctly and make sense to someone who is reading the code.
+
+If the file has a lot of classes, we might find that the module is a bit hard to follow. If we find ourselves using big comment billboards to break a module into sections, this is a hint that what we're writing may be more complex than a single module.
+
+A billboard comment looks like this:
+
+```Python
+################################
+# FUNCTIONS RELATED TO API USE #
+################################
+```
+
+Rather than using a billboard-style comment, it's better to decompose the module int oseparate modules. The billboard comment should become the docstring for a new module. In some cases, class definitions might be a good idea for decomposing a complex module.
+
+The PEP-8 conventions suggest these module global should have ```ALL_CAPS``` style names to make the mvisible. Using a tool like ```pylint``` for code quality checks will result in this suggestion for global variables.
+
+## Whole modules versus module items
+
+There are two approaches to designing the contents of a library module. Some modules are an integrated whole, while others are more like a collection of loosely realted items. When we've designed a moudle as a whoe, it will often have a few classes or functions that are the public-facing API of the module. When we've designed a module as a collection of loosely related items, each individual class or function tends to stand alone
+
+We often see this distinction in the way we import and use a module. We'll look at three variations:
+
+* Using the ```import some_module``` command: This leads to the ```some_module.py``` module being evaluated and the resulting objects are collected into a single namespace called ```some_module```. This requires us to use qualified names for all of the objects in the module, for example ```some_module.this```. This use of qualified names makes the module an integrated whole.
+* Using the ```from some_module import this, that``` command: This leads to the ```some_module.py``` module file being evaluated and only the named objects are created in the current local namespace. We can now use ```this``` or ```that``` without hte module namespace as a qualifier. This use of unqualified names is why a module can seem like a collection of disjointed objects. A common example is a statement like ```from math import sqrt, sin, cos``` to import a few math functions.
+* Using the ```from some_module import *``` command: This will import the module and make all non-private names part of the namespace performing the import. A private name beigins with ```_``` and will not be retained as one of the imported names. We can explicitly limit the number of names imported by a module by providing an ```__all__``` list within the module.. This list of string object names will be elaborated by the ```import *``` statement. We often use the ```__all__``` variable to conceal the utility functions that are part of building the module, but not art of the API that's provided to clients of the module.
+
+An example of how to use ```__all__``` would be to look back at our design for decks of cards, we could elect to keep the suits as an implementation detail that's not improted by default. This is what ```cards.py``` could look like:
+
+```Python
+from enum import Enum
+
+__all__ = ["Deck", "Shoe"]
+
+
+class Suit(str, Enum):
+    Club = "♣"
+    Diamond = "��"
+    Heart = "♥"
+    Spade = "♠"
+
+
+class Card: ...
+
+
+def card(rank: int, suit: Suit) -> Card: ...
+
+
+class Deck: ...
+
+
+class Shoe(Deck): ...
+
+```
+
+## Designing a package
+
+One important consideration when designing a package is not to do it at all. The *Zen of Python* poem ( also known as ```import this``` ) includes this line:
+
+> ***"Flat is better than nested"***
+
+We can see this in the PYthon standard library. The strucutre of the library is relatively flat; there are few nested modules. Deeply nested packages can be overused. We should be skeptical of execessive nesting.
+
+A Python package is a directory with an extra file, ```__init__.py```. The directory name must be a proper Python name. OS names include a lot of characters that are not allowed in Python names.
+
+We often see three design patterns for packages:
+
+* Simple packages are a directory with an empty ```__init__.py``` file. This package name become a qualifier for a collection of modules inside the package. We'll use the following code to pick one of the modules from the package:
+
+```import package.module```
+
+* A module-package hybrid can have an ```__init__.py``` file that is effectively a module definition. This top-level module will import elements from modules inside the package, exposing them via the ```__init__``` module. We'll use the following code to import the whole package as if it was a single module:
+
+```import package```
+
+* Another variation on the module-package hybrid uses the ```__init__.py``` file to choose among laternative implementations. We use the package as if it was a single module via code, as in the following example:
+
+```import package```
+
+## Designing a module-package hybrid
+
+In some cases, a design evolves into a module that is very complex; it can become so complex that a single file becomes a bad idea. When we start putting billboard comments in a module, it's a hint that we should consider refactoring a complex module into a package built from several smaller modules.
+
+In this case, the pacakge can be as simple as the following kind of structure. We can create a directory, named ```blackjack```; within this directory the ```__init__.py``` file would look like the following example:
+
+```Python
+"""Blackjack package"""
+
+from blackjack.cards import Shoe
+from blackjack.player import Strategy_1, Strategy_2
+from blackjack.casino import ReSplit, NoReSplit, NoReSplitAces, Hit17, Stand17
+from blackjack.simulator import Table, Player, Simulate
+from betting impotr Flat, Martingale, OneThreeTwoSix
+```
+
+## Designing a mains cript and the ```__main__``` module
