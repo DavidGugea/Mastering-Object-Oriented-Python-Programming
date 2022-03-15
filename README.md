@@ -5753,3 +5753,192 @@ from betting impotr Flat, Martingale, OneThreeTwoSix
 ```
 
 ## Designing a mains cript and the ```__main__``` module
+
+A top-level main script wil execute our application. In some cases, we may have multiple main scripts because our application does several things. We have three general approache to writing the top-level main script:
+
+* For every small applications, we can run the application with ```python3 some_script.py```. This is the style that we've shown you in most examples.
+* For some large applications, we'll have one or more files that we mark as executable with the OS ```chmod +x``` command. We can put these executable files into Python's ```scripts``` directory with our ```setup.py``` installation. We run these applications with ```some_script.py``` at the command line.
+* For complex applications, we might add a ```__main__.py``` module in the application's package. To provide a tidy interface, the stadnard library offers the ```runpy``` module and the ```-m``` command-line option that will use this specially named module. We can run this with ```python3 -m some_app```.
+
+## Creating an executable script file
+
+For a more complex application, this top-level script may import other modules and packages. It's important that these top-level executable script files should be as simple as possible to promote reuse of the various components. Key design principles include the following:
+
+* Keep the script module as small as possible. Any complexiy shoul be in the modules which are imported.
+* A script module should have no new or distinctive code. It should emphasize importing and using code from other modules.
+* In the long run, no program will ever stand alone. Any valuable software will be extednded  and repurposed. Even the top-level script for an application may be integrated into a neven larger wrapper
+
+## Creating a ```__main__``` module
+
+```>```
+
+To work with the ```runpy`` interface, we must add a small ```__main__.py``` module to our application's top-level package. We have emphasized the design of this top-level executable script file.
+
+We should always permit refactoring an application to build a alrger, more sophisticated composite application. If there's functionality burreid in ```__main__.py```, we need to pull this into a module with a clear, importable name so that it can be used by other applications.
+
+One of the important considerations in Python programming is combining multiple, smaller programs into useful, larger programs.
+
+## Designing long-running applications
+
+A long-running application server will be reading requests from some kind of queue and formulating responses to those requests. In many cases, we leverage the HTTP protocol and build application servers into a web server framework.
+
+We often have some additional requirements that distinguish long-running applications:
+
+* **Robust:** When dealing with external OS or network resources, there are timeouts and other errors that must be confronted successfully. An application framework that allows for plugins and extensions, enjoys the possibility of an extension component harboring an error that the overall framework must handle gracefully. Python's ordinary exception handling is perfectly adequate for writing robust servers.
+* **Auditable:** A simple, centralized log is not always sufficient.
+* **Debuggable:** Ordinary unit testing an integration testing reduces the need for complex debugging tools. However, external resources and software plugins or extensions create complexities that may be difficult to handle wihout providing some debugging support. More sophisticateed logging can be helpful.
+* **Configurable:** Except for simple technology spikes, we want to be able to enable or disable the applicatino features. Enabling or disabling debugging logs, for example, is a common configuration change. In some cases, we want to make these changes without competely stopping and restarting an application.
+* **Controllable:** A simplistic long-running server can simply be killed in order to restart it with a different configuraiton. In order to ensure that buffesr are flushed properly and OS resources and released properly, it's better to use a signal other than ```SIGKILL``` to force termination. Python has signal-handling capabilities available in the ```signal``` module.
+
+## Organizing code into src, scripts, tests and docs
+
+There's no essential need for a complex directory structure in a Python project. The ideal structure follows the standard library and is a relatively flat list of modules. This will include overheads such as the ```setup.py``` and ```README`` files. This is pleasantly simple and easy to work with.
+
+When the modules and package get more complex, we'll often need to impose some structure. For complex applications, one common approach is to segregate Python code into a few bundles. To make the example concrete, let's assume that our application is called ```my_app```:
+
+* ```my_app/src```: This directory has all of the working application code. All of the various modules and packages are here. In some cases, there's only a isingle top-level package name in this ```src``` directory. In other cases, there may be many modules or packages listed under ```src```. The advantage of a ```src``` directory is the simplictiy of doing static analysis with ```mypy```, ```pylint``` or ```pyflakes```.
+* ```my_app/scripts``` or ```my_app/bin```: This directory can have any scripts that form an OS-level command-oline API. These scripts an be copied to the Python ```scripts``` directory by ```setup.py```. As noted previously, these should be like the ```__main__.py``` module; they should be very short and they can be thought of as OS filename aliases for Python code.
+* ```my_app/tests```: This directory can have the various test modules. Most of the modules will have names beginning with ```test_``` so they can be discovered by ```pytest``` automatically.
+* ```my_app/docs```: This directory will have the documentation
+
+The top-level directory will contain the ```setup.py``` file to install the application into Python's standardli brary structure. Additionaly, of course, a ```README.rst``` file would be placed in this directory. Other common files found here are the ```tox.ini``` file, for configuring the overall testing environment and the ``environment.yaml```` file for building the Conda environment for using the application.
+
+When the application modules and test modules are in separate directories, we need to refer to the application as an installed module when running tests. We can use the ```PYTHONPATH``` environment variable for this. We can run the test suite as in the following code:
+
+```PYTHONPATH=my_app/src python3 -m test```
+
+We set an environment variable on the same line where we execute a command. This may be surprising, but it's a first-class feature of the ```bash``` shell. This allows us to make a very localized override to the ```PYTHONPATH``` environment variable.
+
+## Installing Python modules
+
+We have several techniques to instal a Python module or package:
+
+* We can write ```setup.py``` and use the distribution utilities module, ```distutils``` to install the package into Python's ```lib/site-packages``` directory. This is describes in the Python Packaging Authority documentation. Building software for other people to install can be complex, and will often requrie sophisticated test cases using the ```tox``` tool to build environments, run tests and create distribution kits.
+* We can set the ```PYTHONPATH``` environment variable to include oru packages and modules. We can set this temporarily in a shell or we can set it more permanently by editing our ```~/.bash_profile``` or the system's ```/etc/profile```. 
+* The current working directory is a package as well. It's always first on the ```sys.path``` list. When working on a simple one-module Python application, this is very handy.
+
+Setting the environment variable can be done transiently or persistently. We can set it in an interactive session with a command:
+
+```export PYTHONPATH=~/my_app/src```
+
+This sets ```PYTHONPATH``` to include the named directory when searching for a module. This module is effectively installed through this simple change to the environment. Nothing is written to Python's ```lib/site-packages```.
+
+This is a transient setting that may be lost when we end the terminal session. The alternative is to update our ```~/.bash_profile``` to include a more permanent change to the environment. We simply append that ```export``` line to ```.bash_profile``` so that the package is used every time we log in.
+
+For web server applications, the Apache, NGINX, or uWSGI configuration may need to be updated to incluide access to the necessary Python modules. There are two approaches to creating web servers:
+
+* **Install Everything.** Use Python package installation to create the entire web server. This will involve using a local packge index for customized application components. More work is done in the integration phase of continuous integration/continuous deployment ( CI/CD )
+* **Install Open Source Only.** Use Python package installation for open source compenents. Use Git checkout and ```PYTHONPATH``` for the customized application components. More work is odne in the deployment phase of CI/CD.
+
+## Design considerations and tradeoffs
+
+We have a deep hierarchy of packaging techniques. We can simply organize the functionality into defined functions. We can combine the defined functions and their related data into a class. We can then combine related classes into a module. Lastly, we can combine related modules into a package.
+
+When we think of software as a lagnuage to capture knowledge and representation, we have to consider what a class or module *means*. A module is the unit of the Python software consturction, distribution, use and Reuse. With rare exceptions, moduels must be designed around the possibility of reuse.
+
+In most cases, we'll use a class, because we except to have multiple objects that are instances of the class. Often - but not always - a class will have stateful instance variables.
+
+When we look at classes with only a single instance, it's not perfectly clear if a class is truly necessary. Standalone functions  may be as meaningful as a single-instance class. In some instances, a module or separate functions may be an appropriate design, because modules are inherently singletons.
+
+The general exceptaction is a simple stateful collection of definitions. A module is a namespace that can also contian some local variables. This parallels as a class definitions, but lacks the ability to create instances.
+
+While we can create immutable classes ( using ```__slots__```, extending ```NamedTuple```, usinga  frozen ```@dataclass``` or overriding the attribute setter methods ), we can't easily create an immutable module. There does'nt seem to be au se case for an immutable module object.
+
+A small application may be a single module. A lage application will often be a package. As with module design, package should be designed for reuse. A larger application package should properly include a ```__main__``` module.
+
+# 20. Quality and Documentation
+
+To be valuable, software must be trusted. The general goal of trustworthiness relies on a number of software quality attributes. For more information on this, refer to the [***S-Cube Quality Reference Model***](https://www.s-cube-network.eu/km/qrm/index.html). Good documentation is an underlying technique for demonstrating that the various quality attributes have been emt.
+
+Two tools to produce the documentation from the code are ```pydoc``` and ```Sphinx```. The ```pydoc``` tool extracts documentaion from the Python code and produces useful views of the docstrings. The ```Sphinx``` tool allows us to create complete and sophisticated documentation using a lightweight markup language coupled with the source code.
+
+We'll also take a brief look at literate programming techniques. The idea is to write a pleasant, easy-to-understand document that contains the entire body of the source code along with explanatory notes and design details. Literate programming isn't simple, but it can produce good code coupled with a resulting document that is very clear and complete.
+
+## Writing docstrings for the ```help()``` function
+
+Docstrings can provide us with several key pieces of information:
+
+* The API: the parameters, return values and exceptions raised
+* A description of waht to expect
+* Optionally, the ```doctest``` test results.
+
+We can of course, write even more in a docstring. We can provide more details on the design, architecture and rqeuirements. At some point these more abstract higher-level considerations are not directly tied to the Python code. This higher-level design and the requirements don't properly belogn to the code or the docstrings.
+
+The ```help()``` function extracts and displays the docstrings. It performs some minimal formatting on the text. The ```help()``` function is installed in the interactive Python environment by the ```site``` package. The function is actually define in the ```pydoc``` package. In principle, we can import and extend this package to customize the ```help()``` output.
+
+## Writing effective docstrings
+
+When writing docstrings, we need to focus on the essential information that our audience needs. When we lok at using a library module, what do we need to know? Whatever questions we ask means that othe rprogrammers will often have similar questions. There are two boundaries that we should stay inside when we write docstrings:
+
+* It's best to avoid abstract overviews, high-level requirements, user stories or background that is not tied directly to the code. We should provide the background in a separate document. A tool such as Sphinx can combine background material and code in a single document.
+* It's best to also avoid overly detailed *how it works* implementation trivia. The code is readily avaialbe, so there's no point in recapitulating the code in the documentation. If the code is too obscure, perhaps it should be rewritten to make it clearer.
+
+Perhpas the single most important thing that develoeprs want is a working example of how to use the Python object.
+
+Once we're past the example and the API, there are a number of other things that compete for the third place. What else we need tow rite depends on the contedxt. There appear to be three cases:
+
+* **Files, including packages and modules:** In these cases, we're providing an overview or introduction to a collection of modules, classes or function definitions. We need to provide a simple roadmap ro overview of the various elements in the file. In the case where the moduel is relatively small, we might o=provide the doctest and code samples at this level.
+* **Classes, including method functions:** This is where we often provide code samples and ```doctest``` blocks that explain the class API. Because a class maybe statefull and may have a relatively compelx API, we may need to provide rather lengthy documentation. Individual method functions will often have detailed documentation.
+* **Functions:** We may provide code samples and ```doctest``` blocks that explain the function. Because a function is often stateless, we may have a relatively simple API. In some cases, we may avoid more sohpisticated RST markup and focus on the ```help()``` function's documentation.
+
+## Writing file-level docstrings, including modules and packages
+
+A package or a module's purpose is to contain a number of elements. A package contains modules as well as classes, global variables and functions. A module contains claseses, global variables and functions. The top-level docstrings on these containers can act as roadmaps to explain the general features of the package or module. The details are delegate to the individual classes or functions.
+
+## Using Sphinx to produce the documentation
+
+The Sphins tool produces very good-looking documentation in a variety of formats. It can easily combine documentation from soruce code as well as external files with additional design notes, requirements or background.
+
+The Sphinx tool can be found at https://sphinx-doc.org.
+
+Most project wil lstart by using ```sphinx-quickstart``` to create the initial set of files. Once the fiels are avaiable, details can be added. To finalize the documentaiton, the ```sphinx-build``` program will be used.
+
+## Literate programming
+
+The idea behind literate programming is that a single source document can produce efficient code, as well as good-looking documentation.
+
+Literate programming is about promoting a deeper understanding of the code. In the case of Python, the source starts out very readable. Sophisticated literate programming isn't required to make a Python program understandable. Indeed, the main benefit of literate programming for Python is the idea of carrying deeper design and use case information in a form that is more readable than simple Unicode text.
+
+## Use cases for literate programming
+
+There are two essential goals when creating a literate program:
+
+* **A working program:** This is the code, extracted from the source docuemnt(s) are prepared for the compiler or interpreter.
+* **Easy-to-read documentation:** This is the explanation, plus the code, plus any helpful markup rpepared for the presentation. This document could be in HTML, ready to be viewed or it could be in RST and wed use docutils ```rst2html.py``` to convert it to HTML. Alternatively, it could be in LaTeX and we run it through a LaTeX processor to create a PDF document.
+
+The *working program* goal means that our literate programming document will cover the entire suite of the source code files. While this seems daunting, we have to remember that well-organized code snippets don't require a lot of complex hand-waving; in Python,code itself can be clear and meaningful.
+
+The *easy-to-read documentation* goal means taht we want to produce a docuemtn that uses something other than a single font. While most code is written in a monospaced font, it isn't the easiest on our eyes. The essential Unicdeo character set doesn't include helpful font vairants such as bold or italic either. These additional display details ( the font change, size change ,style change ) have evolved over the centuries to make a document more readable.
+
+## Working wtih a literate programming tool
+
+Many **Literate Programming ( LP )** tools are avaiable. The essential ingredient, which varies from tool to tool, is the high-level markup language that separates the explanation from the code.
+
+The source files that we write will contain the following three things:
+
+* Text with markup that constitutes the explanation and the description
+* Working Code in Python
+* High-level mkarup to separate the text ( with markup ) from the code
+
+The essential step in choosing a tool is to take a look at the high-level mkarup that is used. If we find that the markup is eay to write, we can comfortably use it to produce the source document.
+
+Python represents an interesting challenge. Because we have RST-based tools such as Sphinx, we can have very literate dostrings. This leads us to two tiers of documentation:
+
+* Explanations and background. This is outside the code. It provides supporting information on the design decisions that helped to organize the code.
+* Reference and API. This is inside the Python docstrings.
+
+This leads to a pleasant evolutionary approach to literate programming:
+
+* Initially, we can start by embedding the RST markup in our docstrings. A Sphinx-produced document looks good and provided a tidy explanation for the implementation choices.
+* We can step beyond the docstrings to create the background documentation. This might include information on the design decisions, architecture, requirements and user stories. In particular, ddescriptions of non-functional quality requirements belong outside the code.
+* Once we've started to formalize this higher-level design documentation, we can cmore easily pick an LP tool This tool will then dictate how we combine the documentation and code into a single, voerall documentation structure. We can use an LP tool to extract the code and produce the documentation. Some LP tools can be used to run the test suite too.
+
+## Design considerations and tradeoffs
+
+The docstrings should be considered as essential as any other part of the Python soruce. This ensures that the ```help()``` function and ```pydoc``` will work correclty. As with uni test cases, this should be viewed as a mandatory element of the software.
+
+The documentation create by Sphinx can be very good lookin; it will tend to parallel the Python docuemntation. Our objective all along has been seamless integration with other features of Python. Using Sphinx tends to introduce an additional directory structure for the documentation source and build.
+
+As we design our classes, the question of how to describe the design is almost as important as the resulting design itself. Software that can't be explained quickly and clearly will be viewed as untrustworthy.
+
+Taking the time to write an explanation may identfiy hidden complexities or inrregularities. In these cases, we might refactor a design, neither to correct a bug nor to improve performance, but to make it easier to explain. The ability to explain is a quality factor that has tremendous value.
